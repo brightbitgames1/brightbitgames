@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Crosswalk Comet</title>
+<style>
+  html,body{margin:0;height:100%;background:#1E1B2E;overflow:hidden;font-family:"Trebuchet MS",Verdana,Arial,sans-serif}
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{image-rendering:pixelated;image-rendering:crisp-edges;touch-action:none}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
+</head>
+<body>
+<script>
+const W=540,H=960,HUD_H=60,CTRL_H=120,GAME_TOP=HUD_H,GAME_BOTTOM=H-CTRL_H,GAME_H=GAME_BOTTOM-GAME_TOP,CX=W/2;
+const C={bg:0x1E1B2E,orange:0xFF6B35,gold:0xFFD166,mint:0x06D6A0,blue:0x118AB2,purple:0x8338EC,cream:0xF7F3E9,panel:0x382956,panel2:0x4f3b79,ink:0x161028,tree:0x67bb63,road:0x3e445a,mark:0xfafafa,red:0xD93A49};
+const STORY_TEXT='The real story behind this game is about the African Road Safety Charter, which became law after enough countries officially approved it. The charter is a shared promise to make roads safer, build stronger safety systems, and reduce deaths and serious injuries. It is hopeful because smarter streets can help millions of people travel home safely.';
+const CTA='Celebrate safer streets — good design can save lives every single day.';
+const FACTS=[
+  'Safer roads are not just about cars — they also protect people walking, biking, and riding the bus.',
+  'The African Road Safety Charter is a shared promise to improve safety rules and save lives across many countries.'
+];
+const LEVELS=[
+  {name:'Market Morning', subtitle:'Tap glowing corners and paint the first Safe Stripes.', target:7, safetyStart:76, comboStart:0, drain:2.6, eventMs:2100, drag:false, star:false, fact:FACTS[0]},
+  {name:'Bus Lane Boogie', subtitle:'Tap Busy Corners and drag Slow Bumps into hot spots.', target:11, safetyStart:72, comboStart:0, drain:3.4, eventMs:1750, drag:true, star:false, fact:FACTS[1]},
+  {name:'Charter Spark Express', subtitle:'Chain corners, tools, and Star Stripe rescues across the parade map.', target:14, safetyStart:74, comboStart:0, drain:4.2, eventMs:1500, drag:true, star:true, fact:null}
+];
+const SPOTS=[
+  {x:140,y:164,name:'Busy Corner'},{x:270,y:250,name:'School Crossing'},{x:404,y:164,name:'Bus Stop Bend'},
+  {x:160,y:408,name:'Market Turn'},{x:382,y:408,name:'Mural Corner'},{x:270,y:556,name:'Parade Link'}
+];
+const TOOL_ORIGIN={x:104,y:915};
+
+function roundNum(n){return Math.max(0,Math.round(n));}
+function addBadge(scene,x,y,text,fill=C.panel,textColor='#F7F3E9',width=null,depth=20,font='bold 16px "Trebuchet MS"'){
+  const t=scene.add.text(0,0,text,{font,fill:textColor,align:'center',wordWrap:width?{width:width-24}:undefined,lineSpacing:4}).setOrigin(0.5);
+  const w=width||Math.max(76,t.width+24),h=Math.max(30,t.height+14);
+  const g=scene.add.graphics();
+  g.fillStyle(fill,1).lineStyle(3,C.cream,0.95).fillRoundedRect(-w/2,-h/2,w,h,12).strokeRoundedRect(-w/2,-h/2,w,h,12);
+  return scene.add.container(x,y,[g,t]).setDepth(depth);
+}
+function addButton(scene,x,y,w,h,text,fill,textColor='#161028'){
+  const r=scene.add.rectangle(x,y,w,h,fill).setStrokeStyle(5,C.cream).setInteractive();
+  const t=scene.add.text(x,y,text,{font:'bold 24px "Trebuchet MS"',fill:textColor}).setOrigin(0.5);
+  scene.tweens.add({targets:r,scaleX:1.04,scaleY:1.04,duration:760,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+  return {rect:r,text:t};
+}
+function makeUi(scene){
+  if(scene.textures.exists('uiPad')) return;
+  const g=scene.make.graphics({x:0,y:0,add:false});
+  g.fillStyle(C.gold).fillRoundedRect(0,0,88,88,20).lineStyle(4,C.cream).strokeRoundedRect(0,0,88,88,20).fillStyle(C.orange).fillRect(18,32,52,18); g.generateTexture('uiPad',88,88); g.clear();
+  g.fillStyle(C.mint).fillRoundedRect(0,0,42,42,10).lineStyle(3,C.cream).strokeRoundedRect(0,0,42,42,10).fillStyle(C.cream).fillRect(10,17,22,8); g.generateTexture('toolBump',42,42); g.clear();
+  g.fillStyle(C.gold).fillTriangle(10,12,28,2,28,22).fillStyle(C.cream).fillRect(0,9,16,6); g.generateTexture('uiArrow',30,24); g.clear();
+  g.fillStyle(C.cream).fillRect(16,4,14,16).fillRect(8,18,24,20).fillRect(32,12,8,18).fillStyle(C.red).fillRect(20,18,8,2).fillStyle(C.ink).fillRect(18,12,3,3).fillRect(25,12,3,3); g.generateTexture('uiHand',52,44); g.clear();
+  g.fillStyle(C.gold).fillRect(6,6,12,12).fillStyle(C.cream).fillRect(8,8,8,8); g.generateTexture('uiSpark',24,24); g.clear();
+  g.fillStyle(C.mint).fillCircle(32,32,28).lineStyle(4,C.cream).strokeCircle(32,32,28).fillStyle(C.cream).fillRect(12,29,40,6).fillRect(28,13,8,38); g.generateTexture('spotGlow',64,64); g.clear();
+  g.fillStyle(C.gold).fillRect(12,6,36,52).fillStyle(C.cream).fillRect(18,12,8,40).fillRect(34,12,8,40); g.generateTexture('stripeMini',60,64); g.clear();
+  g.fillStyle(C.orange).fillRect(6,18,48,16).fillStyle(C.cream).fillRect(10,22,8,8).fillRect(42,22,8,8); g.generateTexture('walkMini',60,52); g.clear();
+  g.destroy();
+}
+function removeWhite(scene, rawKey, outKey){
+  if(scene.textures.exists(outKey) || !scene.textures.exists(rawKey)) return;
+  const img=scene.textures.get(rawKey).getSourceImage();
+  const src=document.createElement('canvas'); src.width=img.width; src.height=img.height;
+  const ctx=src.getContext('2d',{willReadFrequently:true}); ctx.drawImage(img,0,0);
+  const data=ctx.getImageData(0,0,src.width,src.height); let minX=src.width,minY=src.height,maxX=-1,maxY=-1;
+  for(let i=0;i<data.data.length;i+=4){
+    const r=data.data[i],g=data.data[i+1],b=data.data[i+2],a=data.data[i+3],x=(i/4)%src.width,y=((i/4)/src.width)|0;
+    if(a && r>244 && g>244 && b>244) data.data[i+3]=0;
+    else if(data.data[i+3]){ if(x<minX)minX=x; if(y<minY)minY=y; if(x>maxX)maxX=x; if(y>maxY)maxY=y; }
+  }
+  ctx.putImageData(data,0,0);
+  if(maxX<0){ scene.textures.addImage(outKey,img); return; }
+  const pad=2,w=maxX-minX+1,h=maxY-minY+1;
+  const out=document.createElement('canvas'); out.width=w+pad*2; out.height=h+pad*2;
+  out.getContext('2d').drawImage(src,minX,minY,w,h,pad,pad,w,h);
+  scene.textures.addCanvas(outKey,out);
+}
+function spr(scene,key,fb,x,y,w,h,depth=8){ const k=scene.textures.exists(key)?key:fb; return scene.add.image(x,y,k).setDisplaySize(w,h).setDepth(depth); }
+function drawCity(scene,mode){
+  scene.add.rectangle(CX,H/2,W,H,C.bg);
+  scene.add.rectangle(CX,HUD_H/2,W,HUD_H,C.panel);
+  scene.add.rectangle(CX,H-CTRL_H/2,W,CTRL_H,C.panel);
+  scene.add.rectangle(CX,HUD_H+GAME_H/2,W,GAME_H,0x4f7fa3);
+  if(scene.textures.exists('bgMain')){
+    scene.add.image(CX,HUD_H+GAME_H/2,'bgMain').setDisplaySize(W-14,GAME_H-14).setDepth(0).setAlpha(0.72);
+    scene.add.image(CX+8,HUD_H+GAME_H/2+10,'bgMain').setDisplaySize(W-34,GAME_H-42).setDepth(0).setAlpha(0.16).setTint(mode==='boss'?0xffd17a:0xfff0b2);
+  }
+  scene.add.rectangle(CX,HUD_H+GAME_H/2,W-14,GAME_H-14,C.panel2,0.14).setStrokeStyle(4,C.cream,0.38).setDepth(1);
+  const g=scene.add.graphics().setDepth(2);
+  g.fillStyle(C.road).fillRoundedRect(74,104,392,96,20);
+  g.fillRoundedRect(214,104,112,540,20);
+  g.fillRoundedRect(74,360,392,96,20);
+  g.fillStyle(0xffffff,0.14).fillRect(96,145,120,10).fillRect(324,145,120,10).fillRect(96,401,120,10).fillRect(324,401,120,10);
+  g.fillRect(265,122,10,100).fillRect(265,288,10,90).fillRect(265,482,10,130);
+  g.fillStyle(0x4aa866).fillCircle(50,100,26).fillCircle(492,110,24).fillCircle(48,480,28).fillCircle(482,524,26).fillCircle(88,650,22).fillCircle(450,690,26);
+  g.fillStyle(0xf6b26b).fillRoundedRect(36,230,56,42,8).fillStyle(0xf7d66f).fillRoundedRect(446,274,60,40,8).fillStyle(0xc96be5).fillRoundedRect(46,578,62,42,8);
+  scene.bgFloaters=[];
+  for(let i=0;i<10;i++){ const leaf=scene.add.ellipse(36+(i*54)%W,92+(i*76)%H,20+(i%3)*8,14+(i%2)*4,[C.mint,C.gold,C.orange][i%3],0.16).setDepth(1); leaf.baseX=leaf.x; leaf.baseY=leaf.y; leaf.seed=i*.75; scene.bgFloaters.push(leaf); }
+}
+function animateBg(scene,t){ if(scene.bgFloaters) scene.bgFloaters.forEach((f,i)=>{ f.x=f.baseX+Math.sin(t*0.0005+f.seed)*(i%2?8:5); f.y=f.baseY+Math.cos(t*0.0004+f.seed)*(i%2?5:3); }); }
+
+class Boot extends Phaser.Scene{
+  constructor(){super('boot');}
+  preload(){
+    this.add.rectangle(CX,H/2,W,H,C.bg);
+    this.add.text(CX,410,'LOADING CROSSWALK COMET',{font:'bold 28px "Trebuchet MS"',fill:'#F7F3E9'}).setOrigin(0.5);
+    this.add.rectangle(CX,474,340,28,0x2a1f47).setStrokeStyle(4,C.cream);
+    const bar=this.add.rectangle(CX-166,474,0,20,C.gold).setOrigin(0,0.5);
+    this.load.on('progress',v=>bar.width=332*v);
+    this.load.image('rawHero','assets/sprite-hero.png');
+    this.load.image('rawEnemy','assets/sprite-enemy.png');
+    this.load.image('rawGoal','assets/sprite-goal.png');
+    this.load.image('bgMain','assets/bg-main.png');
+  }
+  create(){ makeUi(this); removeWhite(this,'rawHero','hero'); removeWhite(this,'rawEnemy','enemy'); removeWhite(this,'rawGoal','goal'); this.scene.start('legend'); }
+}
+
+class Legend extends Phaser.Scene{
+  constructor(){super('legend');}
+  create(){
+    drawCity(this,'legend');
+    spr(this,'hero','spotGlow',36,30,40,40,20); spr(this,'goal','spotGlow',74,22,26,26,20);
+    addBadge(this,CX,18,'CROSSWALK COMET',C.panel2,'#F7F3E9',250,20,'bold 22px "Trebuchet MS"');
+    addBadge(this,CX,44,'Paint the path, stop the chaos, and turn busy streets into victory.',0x5b4880,'#F7F3E9',430,20,'bold 14px "Trebuchet MS"');
+    const pW=490,pH=650,pX=CX,pY=GAME_TOP+GAME_H/2-2;
+    this.add.graphics().fillStyle(C.panel,0.96).lineStyle(4,C.cream,0.95).fillRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28).strokeRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28);
+    addBadge(this,pX,pY-pH/2+32,'STREET FRIEND GUIDE',C.mint,'#161028',244,10,'bold 22px "Trebuchet MS"');
+    const cards=[
+      {x:pX-146,y:pY-118,key:'hero',fb:'spotGlow',size:[70,70],name:'Zuri Flashline',fact:'Bright road markings help people see where it is safest to cross.'},
+      {x:pX+146,y:pY-118,key:'goal',fb:'spotGlow',size:[68,68],name:'Safe Stripe',fact:'Crosswalks make walking routes easier to understand.'},
+      {x:pX-146,y:pY+78,key:'toolBump',fb:'toolBump',size:[58,58],name:'Slow Bump',fact:'Slower cars give everyone more time to react.'},
+      {x:pX+146,y:pY+78,key:'enemy',fb:'spotGlow',size:[84,56],name:'Zoom Car',fact:'Speed is one of the biggest dangers on busy roads.'},
+      {x:pX,y:pY+244,key:'walkMini',fb:'walkMini',size:[72,62],name:'Walk Crew',fact:'Safer streets help kids, parents, workers, and elders too.'}
+    ];
+    cards.forEach((c,i)=>{
+      const w=c.name==='Walk Crew'?228:196,h=142;
+      this.add.graphics().fillStyle(0x2a1f49,0.96).lineStyle(3,C.cream,0.9).fillRoundedRect(c.x-w/2,c.y-h/2,w,h,20).strokeRoundedRect(c.x-w/2,c.y-h/2,w,h,20);
+      const img=this.add.image(c.x,c.y-16, this.textures.exists(c.key)?c.key:c.fb).setDisplaySize(c.size[0],c.size[1]).setDepth(8);
+      this.tweens.add({targets:img,scaleX:1.08,scaleY:1.08,duration:700+90*i,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+      addBadge(this,c.x,c.y+28,c.name,C.gold,'#161028',c.name==='Walk Crew'?146:138,9,'bold 18px "Trebuchet MS"');
+      this.add.text(c.x,c.y+68,c.fact,{font:'16px "Trebuchet MS"',fill:'#F7F3E9',align:'center',wordWrap:{width:c.name==='Walk Crew'?182:158},lineSpacing:4}).setOrigin(0.5);
+    });
+    this.hand=this.add.image(pX-146,pY-50,'uiHand').setDepth(20);
+    this.tweens.add({targets:this.hand,x:pX+146,duration:1200,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    addBadge(this,CX,868,'Level 1 starts simple: tap the glowing Busy Corner.',C.gold,'#161028',380,20,'bold 18px "Trebuchet MS"');
+    const btn=addButton(this,CX,920,292,64,'START ROLLING',C.gold,'#161028');
+    btn.rect.on('pointerdown',()=>this.scene.start('play',{levelIndex:0}));
+    this.input.keyboard.on('keydown-SPACE',()=>this.scene.start('play',{levelIndex:0}));
+  }
+  update(t){ animateBg(this,t); }
+}
+
+class Fact extends Phaser.Scene{
+  constructor(){super('fact');}
+  init(data){ this.info=data; }
+  create(){
+    drawCity(this,this.info.fail?'boss':'fact');
+    spr(this,'hero','spotGlow',36,30,40,40,20); spr(this,'goal','spotGlow',74,22,26,26,20);
+    addBadge(this,CX,18,this.info.fail?'TRY AGAIN':'FUN FACT CARD',this.info.fail?C.red:C.mint,this.info.fail?'#F7F3E9':'#161028',220,20,'bold 22px "Trebuchet MS"');
+    const pW=470,pH=560,pX=CX,pY=GAME_TOP+GAME_H/2;
+    this.add.graphics().fillStyle(C.panel,0.96).lineStyle(4,C.cream,0.95).fillRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28).strokeRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28);
+    if(this.info.fail){
+      spr(this,'enemy','spotGlow',CX,pY-126,128,86,8);
+      addBadge(this,CX,pY-34,'The street got too wild!',C.red,'#F7F3E9',236,9,'bold 24px "Trebuchet MS"');
+      this.add.text(CX,pY+32,'Try again and calm the glowing spots faster. In later levels, drag Slow Bumps before the danger timer runs out.',{font:'20px "Trebuchet MS"',fill:'#F7F3E9',align:'center',wordWrap:{width:394},lineSpacing:8}).setOrigin(0.5);
+    }else{
+      spr(this,'goal','spotGlow',CX,pY-126,120,120,8);
+      addBadge(this,CX,pY-34,'Street fact',C.gold,'#161028',170,9,'bold 24px "Trebuchet MS"');
+      this.add.text(CX,pY+16,this.info.fact,{font:'21px "Trebuchet MS"',fill:'#F7F3E9',align:'center',wordWrap:{width:396},lineSpacing:8}).setOrigin(0.5);
+      addBadge(this,CX,pY+148,`Next: ${LEVELS[this.info.next].name}`,C.mint,'#161028',240,9,'bold 20px "Trebuchet MS"');
+      this.add.text(CX,pY+196,LEVELS[this.info.next].subtitle,{font:'18px "Trebuchet MS"',fill:'#F7F3E9',align:'center',wordWrap:{width:382},lineSpacing:6}).setOrigin(0.5);
+    }
+    addBadge(this,CX,868,`Stars ${this.info.score}   Safety ${roundNum(this.info.safety)}%   Combo ${this.info.combo}`,C.panel2,'#F7F3E9',300,20,'bold 18px "Trebuchet MS"');
+    const btn=addButton(this,CX,920,270,64,this.info.fail?'TRY AGAIN':'NEXT LEVEL',this.info.fail?C.red:C.gold,this.info.fail?'#F7F3E9':'#161028');
+    btn.rect.on('pointerdown',()=>this.scene.start('play',{levelIndex:this.info.fail?this.info.level:this.info.next}));
+    this.input.keyboard.on('keydown-SPACE',()=>this.scene.start('play',{levelIndex:this.info.fail?this.info.level:this.info.next}));
+  }
+  update(t){ animateBg(this,t); }
+}
+
+class End extends Phaser.Scene{
+  constructor(){super('end');}
+  init(data){ this.info=data||{}; }
+  create(){
+    drawCity(this,'boss');
+    spr(this,'hero','spotGlow',36,30,40,40,20); spr(this,'goal','spotGlow',74,22,26,26,20);
+    addBadge(this,CX,18,'SAFE STREETS WIN!',C.mint,'#161028',220,20,'bold 22px "Trebuchet MS"');
+    const pW=486,pH=664,pX=CX,pY=GAME_TOP+GAME_H/2-4;
+    this.add.graphics().fillStyle(C.panel,0.96).lineStyle(4,C.cream,0.95).fillRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28).strokeRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28);
+    spr(this,'hero','spotGlow',CX-52,pY-pH/2+88,108,108,8);
+    spr(this,'goal','spotGlow',CX+64,pY-pH/2+88,116,116,8);
+    addBadge(this,CX,pY-pH/2+176,'What the real story means',C.gold,'#161028',276,9,'bold 22px "Trebuchet MS"');
+    this.add.text(CX,pY-pH/2+220,'People across Africa pushed a road safety promise over the finish line. Enough countries said yes, so the African Road Safety Charter became law. That matters because better rules, better streets, and better planning can help millions of people get home safely.',{font:'18px "Trebuchet MS"',fill:'#F7F3E9',align:'center',wordWrap:{width:420},lineSpacing:7}).setOrigin(0.5,0);
+    addBadge(this,CX,pY+104,'Exact story text from the brief',C.mint,'#161028',250,9,'bold 18px "Trebuchet MS"');
+    this.add.text(CX,pY+136,STORY_TEXT,{font:'16px "Trebuchet MS"',fill:'#F7F3E9',align:'center',wordWrap:{width:422},lineSpacing:6}).setOrigin(0.5,0);
+    this.add.text(CX,pY+246,CTA,{font:'bold 18px "Trebuchet MS"',fill:'#FFD166',align:'center',wordWrap:{width:414},lineSpacing:6}).setOrigin(0.5,0);
+    const btn=addButton(this,CX,920,250,64,'PLAY AGAIN',C.gold,'#161028');
+    btn.rect.on('pointerdown',()=>this.scene.start('play',{levelIndex:0}));
+    this.input.keyboard.on('keydown-SPACE',()=>this.scene.start('play',{levelIndex:0}));
+  }
+  update(t){ animateBg(this,t); }
+}
+
+class Play extends Phaser.Scene{
+  constructor(){super('play');}
+  init(data){ this.levelIndex=data.levelIndex||0; }
+  create(){
+    this.level=LEVELS[this.levelIndex];
+    this.isTouch=!!this.sys.game.device.input.touch;
+    this.paused=false; this.done=false; this.progress=0; this.score=0; this.combo=0; this.safety=this.level.safetyStart; this.star=0;
+    this.currentSpot=-1; this.currentTimer=0; this.eventClock=0; this.toolTask=null; this.surgeClock=0; this.guideText=''; this.guideTimer=0; this.guideLife=10; this.focusIndex=1;
+    this.cars=[]; this.walkers=[];
+    drawCity(this,this.level.star?'boss':'play');
+    this.makeHud(); this.makeStage(); this.makeControls(); this.bindInput(); this.seedTraffic(); this.startTutorial(); this.pickNextSpot(true);
+  }
+  makeHud(){
+    spr(this,'hero','spotGlow',34,30,40,40,20); spr(this,'goal','spotGlow',74,22,26,26,20);
+    addBadge(this,CX,18,`Level ${this.levelIndex+1}: ${this.level.name}`,C.panel2,'#F7F3E9',290,20,'bold 18px "Trebuchet MS"');
+    this.topBadge=addBadge(this,CX,44,'',C.panel,'#F7F3E9',430,20,'bold 15px "Trebuchet MS"');
+    this.pauseText=this.add.text(CX,GAME_TOP+GAME_H/2,'PAUSED',{font:'bold 46px "Trebuchet MS"',fill:'#FFD166'}).setOrigin(0.5).setDepth(40).setVisible(false);
+    this.barG=this.add.graphics().setDepth(25);
+  }
+  makeStage(){
+    this.hero=spr(this,'hero','spotGlow',88,GAME_TOP+196,108,108,8);
+    this.heroLabel=addBadge(this,88,GAME_TOP+274,'ZURI FLASHLINE',C.orange,'#F7F3E9',150,10,'bold 16px "Trebuchet MS"');
+    this.goal=spr(this,'goal','spotGlow',430,GAME_TOP+606,116,116,8);
+    this.goalLabel=addBadge(this,430,GAME_TOP+684,'SAFE STREETS MAP',C.gold,'#161028',162,10,'bold 16px "Trebuchet MS"');
+    this.bus=useBus(this,430,GAME_TOP+270,92,54); this.busLabel=addBadge(this,430,GAME_TOP+334,'HAPPY BUS',C.blue,'#F7F3E9',112,10,'bold 16px "Trebuchet MS"');
+    this.crosswalkMarks=[];
+    this.spots=SPOTS.map((s,i)=>{
+      const glow=this.add.image(s.x,s.y,'spotGlow').setDisplaySize(68,68).setDepth(8).setInteractive();
+      glow.index=i; glow.on('pointerdown',()=>this.tapSpot(i));
+      const label=addBadge(this,s.x,s.y+60,s.name,C.mint,'#161028',132,10,'bold 16px "Trebuchet MS"');
+      this.tweens.add({targets:glow,scaleX:1.05,scaleY:1.05,duration:700+80*i,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+      return {glow,label,spot:s};
+    });
+    if(this.level.star){
+      this.boss=spr(this,'enemy','spotGlow',CX,GAME_TOP+106,154,96,8);
+      this.bossLabel=addBadge(this,CX,GAME_TOP+168,'ZOOM WAVE',C.red,'#F7F3E9',140,10,'bold 16px "Trebuchet MS"');
+      this.tweens.add({targets:this.boss,angle:3,duration:250,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    }
+  }
+  makeControls(){
+    if(this.isTouch){
+      this.toolIcon=this.add.image(TOOL_ORIGIN.x,914,'toolBump').setDepth(20).setVisible(false).setInteractive();
+      this.toolLabel=addBadge(this,TOOL_ORIGIN.x,860,'SLOW BUMP',C.mint,'#161028',128,20,'bold 16px "Trebuchet MS"').setVisible(false);
+      this.toolIcon.on('pointerdown',p=>this.startToolDrag(p));
+      this.starBtn=addButton(this,452,914,128,64,'STAR STRIPE',this.level.star?C.purple:0x716784,this.level.star?'#F7F3E9':'#d9d2ea');
+      this.starBtn.rect.on('pointerdown',()=>this.useStar());
+      this.ctrlBadge=addBadge(this,216,914,this.level.drag?'Tap corners • Drag Slow Bump':'Tap glowing corners',C.gold,'#161028',260,20,'bold 18px "Trebuchet MS"');
+    }else{
+      this.ctrlBadge=addBadge(this,CX,914,this.level.star?'Click corners • Drag bump • WASD focus • Space choose • E Star Stripe':(this.level.drag?'Click corners • Drag bump • WASD focus • Space choose':'Click corners • WASD focus • Space choose'),C.gold,'#161028',500,20,'bold 16px "Trebuchet MS"');
+    }
+  }
+  bindInput(){
+    this.keys=this.input.keyboard.addKeys('W,A,S,D,LEFT,RIGHT,UP,DOWN,SPACE,E,P');
+    this.input.keyboard.on('keydown-A',()=>this.moveFocus(-1));
+    this.input.keyboard.on('keydown-LEFT',()=>this.moveFocus(-1));
+    this.input.keyboard.on('keydown-D',()=>this.moveFocus(1));
+    this.input.keyboard.on('keydown-RIGHT',()=>this.moveFocus(1));
+    this.input.keyboard.on('keydown-W',()=>this.moveFocus(-3));
+    this.input.keyboard.on('keydown-UP',()=>this.moveFocus(-3));
+    this.input.keyboard.on('keydown-S',()=>this.moveFocus(3));
+    this.input.keyboard.on('keydown-DOWN',()=>this.moveFocus(3));
+    this.input.keyboard.on('keydown-SPACE',()=>this.tapSpot(this.focusIndex));
+    this.input.keyboard.on('keydown-E',()=>this.useStar());
+    this.input.keyboard.on('keydown-P',()=>this.togglePause());
+    this.input.on('pointermove',p=>this.dragTool(p));
+    this.input.on('pointerup',p=>this.dropTool(p));
+    this.input.on('pointerdown',()=>{ if(this.input.pointer1.isDown&&this.input.pointer2.isDown) this.togglePause(); });
+  }
+  seedTraffic(){
+    const paths=[
+      {from:[40,152],to:[500,152]},{from:[500,400],to:[40,400]},{from:[270,90],to:[270,624]}
+    ];
+    for(let i=0;i<6;i++){
+      const p=paths[i%paths.length];
+      const car=spr(this,'enemy','spotGlow',p.from[0],p.from[1],62,38,7).setAlpha(0.88).setScale(0.92);
+      car.path=p; car.t=(i*0.17)%1; this.cars.push(car);
+    }
+    for(let i=0;i<4;i++){
+      const walk=this.add.image(70+i*30,210+i*20,'walkMini').setDisplaySize(40,34).setDepth(7).setAlpha(0.86);
+      walk.baseX=walk.x; walk.baseY=walk.y; walk.seed=i*.9; this.walkers.push(walk);
+    }
+  }
+  startTutorial(){
+    this.showGuide(this.levelIndex===0?'Tap the glowing Busy Corner to paint the first Safe Stripe!' : 'Tap glowing corners fast, then drag tools when they appear!',3);
+    this.arrow=this.add.image(SPOTS[0].x,SPOTS[0].y-74,'uiArrow').setAngle(90).setDepth(30).setScale(1.2);
+    this.hand=this.add.image(SPOTS[0].x,SPOTS[0].y+86,'uiHand').setDepth(30);
+    this.tweens.add({targets:[this.arrow,this.hand],y:'-=16',duration:520,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    this.time.delayedCall(5000,()=>{ if(this.hand){ this.hand.destroy(); this.hand=null; } });
+    this.time.delayedCall(10000,()=>{ if(this.arrow){ this.arrow.destroy(); this.arrow=null; } });
+  }
+  moveFocus(delta){ this.focusIndex=(this.focusIndex+delta+this.spots.length)%this.spots.length; this.showGuide(`Focus moved to ${this.spots[this.focusIndex].spot.name}.`,1); }
+  pickNextSpot(first=false){
+    this.currentSpot=first?0:(this.currentSpot+1+Phaser.Math.Between(0,2))%this.spots.length;
+    this.currentTimer=this.level.eventMs/1000;
+    this.spots.forEach((s,i)=>{ s.glow.setTint(i===this.currentSpot?0xffffff:0xd9d9e5); });
+    if(this.arrow){ this.arrow.setPosition(this.spots[this.currentSpot].spot.x,this.spots[this.currentSpot].spot.y-74); this.hand.setPosition(this.spots[this.currentSpot].spot.x,this.spots[this.currentSpot].spot.y+86); }
+  }
+  tapSpot(index){
+    if(this.done||this.paused) return;
+    if(index!==this.currentSpot){ this.safety=Math.max(0,this.safety-4); this.combo=0; this.showGuide('That corner is not flashing yet!',1.4); this.spark(this.spots[index].spot.x,this.spots[index].spot.y,C.red); return; }
+    const spot=this.spots[index];
+    this.progress++; this.combo++; this.score+=100+this.combo*10; this.safety=Math.min(100,this.safety+6); this.star=Math.min(100,this.star+12);
+    const mark=this.add.image(spot.spot.x,spot.spot.y,'stripeMini').setDisplaySize(48,52).setDepth(9).setAlpha(0.94); this.crosswalkMarks.push(mark);
+    this.spark(spot.spot.x,spot.spot.y,C.gold); this.hero.setAngle(-8); this.time.delayedCall(120,()=>this.hero.setAngle(0));
+    if(this.level.drag && !this.toolTask && this.progress%3===0) this.spawnToolTask();
+    if(this.progress>=this.level.target && !this.toolTask) this.finishLevel(); else this.pickNextSpot();
+  }
+  spawnToolTask(){
+    this.toolTask={x:[160,270,380][this.progress%3], y:[306,480,584][this.progress%3], life:5.2, dragging:false};
+    this.bumpTarget=this.add.image(this.toolTask.x,this.toolTask.y,'toolBump').setDisplaySize(58,58).setDepth(12).setTint(0xfff2a0);
+    this.bumpArrow=this.add.image(this.toolTask.x,this.toolTask.y-58,'uiArrow').setAngle(90).setDepth(12);
+    this.tweens.add({targets:[this.bumpTarget,this.bumpArrow],scaleX:1.08,scaleY:1.08,duration:500,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    if(this.toolIcon){ this.toolIcon.setVisible(true).setPosition(TOOL_ORIGIN.x,914); this.toolLabel.setVisible(true); }
+    this.showGuide('Drag the Slow Bump onto the flashing road hot spot!',2.2);
+  }
+  startToolDrag(pointer){ if(!this.toolTask||this.paused) return; this.toolTask.dragging=true; this.toolTask.pointerId=pointer.id; }
+  dragTool(pointer){ if(!this.toolTask||!this.toolTask.dragging||pointer.id!==this.toolTask.pointerId||!this.toolIcon) return; this.toolIcon.setPosition(pointer.x,pointer.y); }
+  dropTool(pointer){
+    if(!this.toolTask||!this.toolTask.dragging||pointer.id!==this.toolTask.pointerId) return;
+    this.toolTask.dragging=false; this.toolTask.pointerId=null;
+    const ok=Phaser.Math.Distance.Between(pointer.x,pointer.y,this.toolTask.x,this.toolTask.y)<60;
+    if(ok){
+      this.score+=170; this.combo++; this.safety=Math.min(100,this.safety+12); this.star=Math.min(100,this.star+10);
+      this.spark(this.toolTask.x,this.toolTask.y,C.mint); this.showGuide('Slow Bump placed! Cars calm down.',1.6); this.clearToolTask();
+      if(this.progress>=this.level.target) this.finishLevel();
+    }else if(this.toolIcon) this.toolIcon.setPosition(TOOL_ORIGIN.x,914);
+  }
+  clearToolTask(){
+    if(this.bumpTarget){ this.bumpTarget.destroy(); this.bumpTarget=null; }
+    if(this.bumpArrow){ this.bumpArrow.destroy(); this.bumpArrow=null; }
+    if(this.toolIcon){ this.toolIcon.setVisible(false).setPosition(TOOL_ORIGIN.x,914); this.toolLabel.setVisible(false); }
+    this.toolTask=null;
+  }
+  useStar(){
+    if(!this.level.star || this.star<100 || this.done || this.paused) return;
+    this.star=0; this.safety=Math.min(100,this.safety+18); this.score+=220; this.combo+=2;
+    if(this.boss){ this.boss.setTintFill(0xffe08c); this.time.delayedCall(220,()=>this.boss.clearTint()); }
+    this.surgeClock=0; this.spark(CX,GAME_TOP+130,C.gold); this.showGuide('Star Stripe! Traffic freezes and the crowd zooms safely across!',2.2);
+    if(this.toolTask) this.clearToolTask();
+  }
+  finishLevel(){ this.done=true; this.time.delayedCall(500,()=>{ if(this.levelIndex===LEVELS.length-1) this.scene.start('end',{score:this.score}); else this.scene.start('fact',{level:this.levelIndex,next:this.levelIndex+1,score:this.score,safety:this.safety,combo:this.combo,fact:this.level.fact,fail:false}); }); }
+  failLevel(){ this.done=true; this.scene.start('fact',{level:this.levelIndex,score:this.score,safety:this.safety,combo:this.combo,fail:true}); }
+  togglePause(){ if(this.done) return; this.paused=!this.paused; this.pauseText.setVisible(this.paused); }
+  showGuide(text,time=2){ this.guideText=text; this.guideTimer=time; }
+  spark(x,y,color){ const s=this.add.image(x,y,'uiSpark').setTint(color).setScale(0.8).setDepth(30); this.tweens.add({targets:s,scale:2.8,alpha:0,duration:240,onComplete:()=>s.destroy()}); }
+  updateTraffic(time,dt){
+    this.cars.forEach((car,i)=>{ car.t=(car.t+dt*(0.16+(i%3)*0.04))%1; car.x=Phaser.Math.Linear(car.path.from[0],car.path.to[0],car.t); car.y=Phaser.Math.Linear(car.path.from[1],car.path.to[1],car.t); });
+    this.walkers.forEach((w,i)=>{ w.y=w.baseY+Math.sin(time*0.003+i)*8; });
+    this.bus.x=430+Math.sin(time*0.0025)*18; this.bus.y=GAME_TOP+270+Math.cos(time*0.0025)*4;
+    this.hero.y=GAME_TOP+196+Math.sin(time*0.008)*5;
+    if(this.boss){ this.boss.x=CX+Math.sin(time*0.004)*22; this.boss.y=GAME_TOP+106+Math.cos(time*0.006)*6; }
+  }
+  updateHud(){
+    this.topBadge.list[1].setText(`Stars ${this.score}   Safety ${roundNum(this.safety)}%   Combo ${this.combo}${this.level.star?`   Star Stripe ${roundNum(this.star)}%`:''}`);
+    this.barG.clear();
+    this.barG.fillStyle(0x1c1432).fillRoundedRect(12,62,516,14,7); this.barG.fillStyle(C.mint).fillRoundedRect(14,64,Math.max(6,512*this.safety/100),10,6);
+    this.barG.fillStyle(0x1c1432).fillRoundedRect(12,80,516,14,7); this.barG.fillStyle(C.gold).fillRoundedRect(14,82,Math.max(0,Math.min(512,512*(this.progress/this.level.target))),10,6);
+    if(this.level.star){ this.barG.fillStyle(0x1c1432).fillRoundedRect(12,98,516,14,7); this.barG.fillStyle(C.purple).fillRoundedRect(14,100,Math.max(0,512*this.star/100),10,6); }
+    if(!this.guideBadge) this.guideBadge=addBadge(this,CX,844,'',C.gold,'#161028',420,22,'bold 18px "Trebuchet MS"');
+    this.guideBadge.list[1].setText(this.guideTimer>0?this.guideText:(this.level.drag?'Tap corners and drag Slow Bumps onto flashing roads.':'Tap glowing Busy Corners to paint Safe Stripes.'));
+  }
+  update(time,delta){
+    animateBg(this,time);
+    if(this.done) return;
+    if(this.paused){ this.updateHud(); return; }
+    const dt=delta/1000;
+    if(this.guideTimer>0) this.guideTimer-=dt;
+    this.safety=Math.max(0,this.safety-this.level.drain*dt);
+    this.eventClock+=delta; if(this.eventClock>=this.level.eventMs){ this.eventClock=0; if(!this.toolTask) this.pickNextSpot(); }
+    this.currentTimer-=dt; if(this.currentTimer<=0){ this.currentTimer=this.level.eventMs/1000; this.safety=Math.max(0,this.safety-8); this.combo=0; this.pickNextSpot(); this.showGuide('That flashing corner was missed!',1.6); }
+    if(this.toolTask){ this.toolTask.life-=dt; if(this.toolTask.life<=0){ this.safety=Math.max(0,this.safety-10); this.combo=0; this.clearToolTask(); this.showGuide('The hot spot stayed too speedy!',1.6); } }
+    if(this.level.star){ this.surgeClock+=dt; if(this.surgeClock>4.8){ this.surgeClock=0; this.safety=Math.max(0,this.safety-9); this.showGuide('A Zoom Wave blasted through! Charge Star Stripe!',1.8); this.spark(CX,GAME_TOP+116,C.red); } }
+    this.updateTraffic(time,dt); this.updateHud();
+    if(this.safety<=0) this.failLevel();
+  }
+}
+function useBus(scene,x,y,w,h){
+  const g=scene.add.graphics().setDepth(8); g.fillStyle(C.blue).fillRoundedRect(-w/2,-h/2,w,h,12).lineStyle(4,C.cream).strokeRoundedRect(-w/2,-h/2,w,h,12); g.fillStyle(C.cream).fillRoundedRect(-w/2+10,-h/2+10,w-20,16,6).fillCircle(-w/2+18,h/2-2,6).fillCircle(w/2-18,h/2-2,6); const c=scene.add.container(x,y,[g]); return c;
+}
+new Phaser.Game({ type:Phaser.AUTO,width:W,height:H,pixelArt:true,backgroundColor:'#1E1B2E',scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH,parent:document.body},scene:[Boot,Legend,Play,Fact,End],input:{activePointers:3},render:{pixelArt:true,roundPixels:true,antialias:false} });
+</script>
+</body>
+</html>
