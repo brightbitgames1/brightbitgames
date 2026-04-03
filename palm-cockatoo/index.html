@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Cockatoo Canopy Cadence</title>
+<style>
+  html,body{margin:0;height:100%;background:#1F1A38;overflow:hidden;font-family:"Trebuchet MS",Verdana,Arial,sans-serif}
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{image-rendering:pixelated;image-rendering:crisp-edges;touch-action:none}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
+</head>
+<body>
+<script>
+const W=540,H=960,HUD_H=60,CTRL_H=120,GAME_TOP=HUD_H,GAME_BOTTOM=H-CTRL_H,GAME_H=GAME_BOTTOM-GAME_TOP,CX=W/2;
+const C={sky:0x1F1A38,red:0xD7263D,gold:0xFFB703,mint:0x2EC4B6,green:0x7CCB5E,cream:0xF7E7B7,panel:0x38295f,panel2:0x4e3a7d,ink:0x160f28,white:0xFFFFFF,cloud:0x95d2ff};
+const STORY_TEXT='The real story behind the game is about endangered palm cockatoos in Queensland, where conservationists worked for years to build special artificial nest hollows that matched what the birds need. One of those nests finally helped a chick hatch, which is a big hopeful sign for a species with fewer than 2,000 birds left. It shows that patient care, smart design, and love for wildlife can give rare animals a better future.';
+const CTA='Cheer for conservation heroes — protecting one nest can help an entire species sing on.';
+const FACTS=[
+  'Palm cockatoos are very picky about where they raise their babies, so a good nest has to feel just right.',
+  'Artificial nest hollows can help birds when old trees with natural hollows are hard to find.'
+];
+const LEVELS=[
+  {name:'Hollow Harmony', subtitle:'Tap the beat and steady the first sunny nest.', notes:20, speed:206, safetyStart:74, drain:2.6, repairs:false, storm:false, fact:FACTS[0]},
+  {name:'Rainforest Rattle', subtitle:'The beat gets busier and nests need quick fix-ups.', notes:28, speed:246, safetyStart:72, drain:3.6, repairs:true, storm:false, fact:FACTS[1]},
+  {name:'Redcheek Finale', subtitle:'Keep the final hatch safe through the big wild storm.', notes:34, speed:278, safetyStart:76, drain:4.3, repairs:true, storm:true, fact:null}
+];
+const LANES=[0.26,0.50,0.74].map(v=>Math.round(W*v));
+const PAD_Y=H-70, JUDGE_Y=GAME_BOTTOM-34;
+function roundNum(n){return Math.max(0,Math.round(n));}
+function fmt(n){return String(n??'');}
+function addBadge(scene,x,y,text,fill=C.panel,textColor='#F7E7B7',width=null,depth=30,font='bold 16px "Trebuchet MS"'){
+  const t=scene.add.text(0,0,text,{font,fill:textColor,align:'center',wordWrap:width?{width:width-24}:undefined,lineSpacing:4}).setOrigin(0.5);
+  const w=width||Math.max(76,t.width+24), h=Math.max(30,t.height+14);
+  const g=scene.add.graphics();
+  g.fillStyle(fill,1).lineStyle(3,C.cream,0.95).fillRoundedRect(-w/2,-h/2,w,h,12).strokeRoundedRect(-w/2,-h/2,w,h,12);
+  return scene.add.container(x,y,[g,t]).setDepth(depth);
+}
+function addButton(scene,x,y,w,h,text,fill,textColor='#160f28'){
+  const r=scene.add.rectangle(x,y,w,h,fill).setStrokeStyle(5,C.cream).setInteractive();
+  const t=scene.add.text(x,y,text,{font:'bold 24px "Trebuchet MS"',fill:textColor}).setOrigin(0.5);
+  scene.tweens.add({targets:r,scaleX:1.04,scaleY:1.04,duration:760,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+  return {rect:r,text:t};
+}
+function createFallbackTextures(scene){
+  if(scene.textures.exists('uiPad')) return;
+  const g=scene.make.graphics({x:0,y:0,add:false});
+  g.fillStyle(C.gold).fillRoundedRect(0,0,90,90,18).lineStyle(4,C.cream).strokeRoundedRect(0,0,90,90,18).fillStyle(C.ink).fillRect(20,36,50,12); g.generateTexture('uiPad',90,90); g.clear();
+  g.fillStyle(C.mint).fillRoundedRect(0,0,34,34,10).lineStyle(3,C.cream).strokeRoundedRect(0,0,34,34,10); g.generateTexture('uiNote',34,34); g.clear();
+  g.fillStyle(C.red).fillRoundedRect(0,0,40,40,10).lineStyle(3,C.cream).strokeRoundedRect(0,0,40,40,10).fillStyle(C.cream).fillRect(14,12,12,16); g.generateTexture('uiRepair',40,40); g.clear();
+  g.fillStyle(C.gold).fillTriangle(10,12,28,2,28,22); g.fillStyle(C.cream).fillRect(0,9,16,6); g.generateTexture('uiArrow',30,24); g.clear();
+  g.fillStyle(C.cream).fillRect(16,4,14,16).fillRect(8,18,24,20).fillRect(32,12,8,18).fillStyle(C.red).fillRect(20,18,8,2).fillStyle(C.ink).fillRect(18,12,3,3).fillRect(25,12,3,3); g.generateTexture('uiHand',52,44); g.clear();
+  g.fillStyle(C.gold).fillRect(6,6,12,12).fillStyle(C.cream).fillRect(8,8,8,8); g.generateTexture('uiSpark',24,24); g.clear();
+  g.fillStyle(C.gold).fillEllipse(10,12,14,18).fillStyle(C.cream).fillRect(8,8,2,2).fillRect(11,8,2,2).fillRect(8,12,5,2); g.generateTexture('eggFallback',20,24); g.clear();
+  g.fillStyle(0x222222).fillRect(12,10,24,18).fillRect(16,6,16,8).fillRect(16,28,16,10).fillStyle(C.red).fillRect(8,16,6,6).fillRect(34,16,6,6).fillStyle(C.cream).fillRect(18,16,4,4).fillRect(26,16,4,4).fillRect(20,24,8,2); g.generateTexture('heroFallback',48,48); g.clear();
+  g.fillStyle(C.gold).fillRect(10,8,28,28).fillRect(14,4,20,36).fillStyle(C.cream).fillRect(16,14,4,4).fillRect(28,14,4,4).fillStyle(C.ink).fillRect(18,16,2,2).fillRect(30,16,2,2).fillRect(18,26,14,2); g.generateTexture('goalFallback',48,48); g.clear();
+  g.fillStyle(C.cloud).fillRect(10,18,56,22).fillRect(18,10,40,36).fillStyle(C.red).fillRect(12,18,8,8).fillRect(56,18,8,8).fillStyle(C.cream).fillRect(24,20,8,8).fillRect(42,20,8,8).fillStyle(C.ink).fillRect(26,22,4,4).fillRect(44,22,4,4).fillRect(24,34,26,3); g.generateTexture('enemyFallback',76,56); g.destroy();
+}
+function processWhiteBg(scene, rawKey, outKey){
+  if(scene.textures.exists(outKey)) return;
+  if(!scene.textures.exists(rawKey)) return;
+  const img=scene.textures.get(rawKey).getSourceImage();
+  const src=document.createElement('canvas'); src.width=img.width; src.height=img.height;
+  const ctx=src.getContext('2d',{willReadFrequently:true}); ctx.drawImage(img,0,0);
+  const data=ctx.getImageData(0,0,src.width,src.height); let minX=src.width,minY=src.height,maxX=-1,maxY=-1;
+  for(let i=0;i<data.data.length;i+=4){
+    const r=data.data[i],g=data.data[i+1],b=data.data[i+2],a=data.data[i+3],x=(i/4)%src.width,y=((i/4)/src.width)|0;
+    if(a && r>244 && g>244 && b>244) data.data[i+3]=0; else if(data.data[i+3]){ if(x<minX)minX=x; if(y<minY)minY=y; if(x>maxX)maxX=x; if(y>maxY)maxY=y; }
+  }
+  ctx.putImageData(data,0,0);
+  if(maxX<0){ scene.textures.addImage(outKey,img); return; }
+  const pad=2,w=maxX-minX+1,h=maxY-minY+1;
+  const out=document.createElement('canvas'); out.width=w+pad*2; out.height=h+pad*2;
+  out.getContext('2d').drawImage(src,minX,minY,w,h,pad,pad,w,h);
+  scene.textures.addCanvas(outKey,out);
+}
+function spriteFor(scene, assetKey, fallbackKey, x, y, w, h, depth=8){
+  const key=scene.textures.exists(assetKey)?assetKey:fallbackKey;
+  return scene.add.image(x,y,key).setDisplaySize(w,h).setDepth(depth);
+}
+function drawFrame(scene){
+  scene.add.rectangle(CX,H/2,W,H,C.sky);
+  scene.add.rectangle(CX,HUD_H/2,W,HUD_H,C.panel);
+  scene.add.rectangle(CX,H-CTRL_H/2,W,CTRL_H,C.panel);
+  scene.add.rectangle(CX,HUD_H+GAME_H/2,W,GAME_H,0x284768);
+  if(scene.textures.exists('bgMain')){
+    scene.add.image(CX,HUD_H+GAME_H/2,'bgMain').setDisplaySize(W-14,GAME_H-14).setDepth(0).setAlpha(0.72);
+    scene.add.image(CX+14,HUD_H+GAME_H/2+8,'bgMain').setDisplaySize(W-34,GAME_H-42).setDepth(0).setAlpha(0.18).setTint(0xffd486);
+  }
+  scene.add.rectangle(CX,HUD_H+GAME_H/2,W-14,GAME_H-14,C.panel2,0.18).setStrokeStyle(4,C.cream,0.4).setDepth(1);
+  scene.bgFloaters=[];
+  for(let i=0;i<10;i++){
+    const leaf=scene.add.ellipse(30+(i*53)%W,110+(i*72)%H,22+(i%3)*10,14+(i%2)*6,[C.green,C.gold,C.mint][i%3],0.18).setDepth(1);
+    leaf.baseX=leaf.x; leaf.baseY=leaf.y; leaf.seed=i*.7; scene.bgFloaters.push(leaf);
+  }
+}
+function animateBg(scene,t){ if(scene.bgFloaters) scene.bgFloaters.forEach((f,i)=>{ f.x=f.baseX+Math.sin(t*0.0005+f.seed)*(i%2?8:5); f.y=f.baseY+Math.cos(t*0.0004+f.seed)*(i%2?5:3); }); }
+function makePattern(levelIndex,total){
+  const out=[]; let last=1;
+  for(let i=0;i<total;i++){
+    let lane;
+    if(levelIndex===0) lane=[0,1,2,1][i%4];
+    else if(levelIndex===1) lane=[0,1,2,2,1,0,1][i%7];
+    else lane=[1,0,2,1,2,0,1,2][i%8];
+    if(i>0 && lane===last) lane=(lane+1+(i%2))%3;
+    out.push({lane,time:1300+i*(levelIndex===0?760:levelIndex===1?620:560), special:levelIndex===2 && i>8 && i%11===0});
+    last=lane;
+  }
+  return out;
+}
+
+class BootScene extends Phaser.Scene{
+  constructor(){super('boot');}
+  preload(){
+    this.add.rectangle(CX,H/2,W,H,C.sky);
+    this.add.text(CX,410,'LOADING KOKO\'S FOREST STAGE',{font:'bold 28px "Trebuchet MS"',fill:'#F7E7B7'}).setOrigin(0.5);
+    const box=this.add.rectangle(CX,474,340,28,0x2c1d4b).setStrokeStyle(4,C.cream);
+    const bar=this.add.rectangle(CX-166,474,0,20,C.gold).setOrigin(0,0.5);
+    this.load.on('progress',v=>bar.width=332*v);
+    this.load.image('rawHero','assets/sprite-hero.png');
+    this.load.image('rawEnemy','assets/sprite-enemy.png');
+    this.load.image('rawGoal','assets/sprite-goal.png');
+    this.load.image('bgMain','assets/bg-main.png');
+  }
+  create(){
+    createFallbackTextures(this);
+    processWhiteBg(this,'rawHero','hero');
+    processWhiteBg(this,'rawEnemy','enemy');
+    processWhiteBg(this,'rawGoal','goal');
+    this.scene.start('title');
+  }
+}
+
+class TitleScene extends Phaser.Scene{
+  constructor(){super('title');}
+  create(){
+    drawFrame(this);
+    spriteFor(this,'hero','heroFallback',36,30,38,38,20);
+    spriteFor(this,'goal','goalFallback',72,22,24,24,20);
+    addBadge(this,CX,18,'COCKATOO CANOPY CADENCE',C.panel2,'#F7E7B7',340,20,'bold 22px "Trebuchet MS"');
+    addBadge(this,CX,44,'Drum the forest alive and hatch hope in the treetops.',0x5a477f,'#F7E7B7',390,20,'bold 14px "Trebuchet MS"');
+
+    const panelW=488,panelH=650,pX=CX,pY=GAME_TOP+GAME_H/2-2;
+    this.add.graphics().fillStyle(C.panel,0.96).lineStyle(4,C.cream,0.95).fillRoundedRect(pX-panelW/2,pY-panelH/2,panelW,panelH,28).strokeRoundedRect(pX-panelW/2,pY-panelH/2,panelW,panelH,28);
+    addBadge(this,pX,pY-panelH/2+32,'FOREST FRIEND GUIDE',C.mint,'#160f28',244,10,'bold 22px "Trebuchet MS"');
+    const cards=[
+      {x:pX-145,y:pY-118,key:'hero',fallback:'heroFallback',name:'Koko Redcheek',fact:'Palm cockatoos sometimes drum on trees with sticks to make sound.'},
+      {x:pX+145,y:pY-118,key:'goal',fallback:'goalFallback',name:'Cozy Hollow',fact:'Some birds need very special homes before they will lay eggs.'},
+      {x:pX-145,y:pY+78,key:'eggFallback',fallback:'eggFallback',name:'Baby Hope Egg',fact:'A safe nest helps parent birds relax and care for their chick.'},
+      {x:pX+145,y:pY+78,key:'enemy',fallback:'enemyFallback',name:'Wind Wobbler',fact:'Strong weather can make high tree nests dangerous.'},
+      {x:pX,y:pY+244,key:'uiPad',fallback:'uiPad',name:'Drum Branch',fact:'Tap the beat on the three pads to keep the nest calm.'}
+    ];
+    cards.forEach((c,i)=>{
+      const w=i===4?228:196,h=142;
+      this.add.graphics().fillStyle(0x2a1f49,0.96).lineStyle(3,C.cream,0.9).fillRoundedRect(c.x-w/2,c.y-h/2,w,h,20).strokeRoundedRect(c.x-w/2,c.y-h/2,w,h,20);
+      const img=this.add.image(c.x,c.y-20, this.textures.exists(c.key)?c.key:c.fallback).setDisplaySize(c.key==='uiPad'?72:60, c.key==='enemy'?48:(c.key==='uiPad'?72:(c.key==='hero'?64:58))).setDepth(8);
+      this.tweens.add({targets:img,scaleX:1.08,scaleY:1.08,duration:700+80*i,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+      addBadge(this,c.x,c.y+28,c.name,C.gold,'#160f28',i===4?150:136,9,'bold 18px "Trebuchet MS"');
+      this.add.text(c.x,c.y+66,c.fact,{font:'16px "Trebuchet MS"',fill:'#F7E7B7',align:'center',wordWrap:{width:i===4?186:158},lineSpacing:4}).setOrigin(0.5);
+    });
+
+    const finger=this.add.image(pX-145,pY-54,'uiHand').setDepth(20);
+    this.tweens.add({targets:finger,x:pX+145,duration:1200,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    addBadge(this,CX,864,'Level 1 starts simple: tap the pads on the beat.',C.gold,'#160f28',360,20,'bold 18px "Trebuchet MS"');
+    const btn=addButton(this,CX,920,292,64,'START DRUMMING',C.gold,'#160f28');
+    btn.rect.on('pointerdown',()=>this.scene.start('play',{levelIndex:0}));
+    this.input.keyboard.on('keydown-SPACE',()=>this.scene.start('play',{levelIndex:0}));
+  }
+  update(t){ animateBg(this,t); }
+}
+
+class FactScene extends Phaser.Scene{
+  constructor(){super('fact');}
+  init(data){ this.dataIn=data; }
+  create(){
+    drawFrame(this);
+    spriteFor(this,'hero','heroFallback',36,30,38,38,20);
+    spriteFor(this,'goal','goalFallback',72,22,24,24,20);
+    addBadge(this,CX,18,this.dataIn.fail?'TRY AGAIN':'FUN FACT CARD',this.dataIn.fail?C.red:C.mint,this.dataIn.fail?'#F7E7B7':'#160f28',220,20,'bold 22px "Trebuchet MS"');
+    const pW=470,pH=560,pX=CX,pY=GAME_TOP+GAME_H/2;
+    this.add.graphics().fillStyle(C.panel,0.96).lineStyle(4,C.cream,0.95).fillRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28).strokeRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28);
+    if(this.dataIn.fail){
+      spriteFor(this,'enemy','enemyFallback',CX,pY-126,130,92,8);
+      addBadge(this,CX,pY-34,'The nest got too shaky!',C.red,'#F7E7B7',250,9,'bold 24px "Trebuchet MS"');
+      this.add.text(CX,pY+30,'Try the beat again, hit notes closer to the line, and tap fix-up icons before they fade out.',{font:'20px "Trebuchet MS"',fill:'#F7E7B7',align:'center',wordWrap:{width:392},lineSpacing:8}).setOrigin(0.5);
+    }else{
+      spriteFor(this,'goal','goalFallback',CX,pY-126,120,120,8);
+      addBadge(this,CX,pY-34,'Real forest fact',C.gold,'#160f28',210,9,'bold 24px "Trebuchet MS"');
+      this.add.text(CX,pY+16,this.dataIn.fact,{font:'21px "Trebuchet MS"',fill:'#F7E7B7',align:'center',wordWrap:{width:396},lineSpacing:8}).setOrigin(0.5);
+      addBadge(this,CX,pY+148,`Next: ${LEVELS[this.dataIn.next].name}`,C.mint,'#160f28',240,9,'bold 20px "Trebuchet MS"');
+      this.add.text(CX,pY+196,LEVELS[this.dataIn.next].subtitle,{font:'18px "Trebuchet MS"',fill:'#F7E7B7',align:'center',wordWrap:{width:380},lineSpacing:6}).setOrigin(0.5);
+    }
+    addBadge(this,CX,868,`Score ${this.dataIn.score}   Nest Safety ${roundNum(this.dataIn.safety)}%`,C.panel2,'#F7E7B7',300,20,'bold 18px "Trebuchet MS"');
+    const btn=addButton(this,CX,920,270,64,this.dataIn.fail?'TRY AGAIN':'NEXT LEVEL',this.dataIn.fail?C.red:C.gold,this.dataIn.fail?'#F7E7B7':'#160f28');
+    btn.rect.on('pointerdown',()=>this.scene.start('play',{levelIndex:this.dataIn.fail?this.dataIn.level:this.dataIn.next}));
+    this.input.keyboard.on('keydown-SPACE',()=>this.scene.start('play',{levelIndex:this.dataIn.fail?this.dataIn.level:this.dataIn.next}));
+  }
+  update(t){ animateBg(this,t); }
+}
+
+class EndScene extends Phaser.Scene{
+  constructor(){super('end');}
+  init(data){ this.dataIn=data||{}; }
+  create(){
+    drawFrame(this);
+    spriteFor(this,'hero','heroFallback',36,30,38,38,20);
+    spriteFor(this,'goal','goalFallback',72,22,24,24,20);
+    addBadge(this,CX,18,'THE CHICK HATCHED!',C.mint,'#160f28',240,20,'bold 22px "Trebuchet MS"');
+    const pW=484,pH=662,pX=CX,pY=GAME_TOP+GAME_H/2-4;
+    this.add.graphics().fillStyle(C.panel,0.96).lineStyle(4,C.cream,0.95).fillRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28).strokeRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28);
+    spriteFor(this,'hero','heroFallback',CX-52,pY-pH/2+88,104,104,8);
+    spriteFor(this,'goal','goalFallback',CX+64,pY-pH/2+88,110,110,8);
+    addBadge(this,CX,pY-pH/2+176,'What the real news means',C.gold,'#160f28',270,9,'bold 22px "Trebuchet MS"');
+    this.add.text(CX,pY-pH/2+220,'People in Queensland spent years building special nest homes for endangered palm cockatoos. One of those homes finally helped a chick hatch. That is a huge hopeful sign for a bird with fewer than 2,000 left. It shows that careful design, patience, and kindness can help rare animals grow safer futures.',{font:'18px "Trebuchet MS"',fill:'#F7E7B7',align:'center',wordWrap:{width:420},lineSpacing:7}).setOrigin(0.5,0);
+    addBadge(this,CX,pY+104,'Exact story text from the brief',C.mint,'#160f28',250,9,'bold 18px "Trebuchet MS"');
+    this.add.text(CX,pY+136,STORY_TEXT,{font:'16px "Trebuchet MS"',fill:'#F7E7B7',align:'center',wordWrap:{width:422},lineSpacing:6}).setOrigin(0.5,0);
+    this.add.text(CX,pY+246,CTA,{font:'bold 18px "Trebuchet MS"',fill:'#FFB703',align:'center',wordWrap:{width:412},lineSpacing:6}).setOrigin(0.5,0);
+    const btn=addButton(this,CX,920,250,64,'PLAY AGAIN',C.gold,'#160f28');
+    btn.rect.on('pointerdown',()=>this.scene.start('play',{levelIndex:0}));
+    this.input.keyboard.on('keydown-SPACE',()=>this.scene.start('play',{levelIndex:0}));
+  }
+  update(t){ animateBg(this,t); }
+}
+
+class PlayScene extends Phaser.Scene{
+  constructor(){super('play');}
+  init(data){ this.levelIndex=data.levelIndex||0; }
+  create(){
+    this.level=LEVELS[this.levelIndex];
+    this.isTouch=!!this.sys.game.device.input.touch;
+    this.notes=[]; this.repairIcons=[]; this.hitFx=[]; this.pointerPads={};
+    this.spawned=0; this.cleared=0; this.score=0; this.combo=0; this.safety=this.level.safetyStart; this.power=0; this.specialReady=false; this.repairActive=null; this.over=false;
+    this.musicClock=0; this.pattern=makePattern(this.levelIndex,this.level.notes); this.nextIdx=0; this.autoDemoHits=3; this.guideTime=10; this.samplePlayed=false;
+    drawFrame(this);
+    this.makeHud(); this.makeStage(); this.makePads(); this.bindInput();
+    this.showGuide(this.levelIndex===0?'Tap the pads on the beat!':'Keep the beat and watch for fix-up icons!');
+  }
+  makeHud(){
+    spriteFor(this,'hero','heroFallback',34,30,40,40,20);
+    spriteFor(this,'goal','goalFallback',74,24,26,26,20);
+    addBadge(this,CX,18,`Level ${this.levelIndex+1}: ${this.level.name}`,C.panel2,'#F7E7B7',290,20,'bold 18px "Trebuchet MS"');
+    this.topBadge=addBadge(this,CX,44,'',C.panel,'#F7E7B7',410,20,'bold 16px "Trebuchet MS"');
+    this.pauseText=this.add.text(CX,GAME_TOP+GAME_H/2,'PAUSED',{font:'bold 44px "Trebuchet MS"',fill:'#FFB703'}).setOrigin(0.5).setDepth(40).setVisible(false);
+  }
+  makeStage(){
+    this.hero=spriteFor(this,'hero','heroFallback',96,GAME_TOP+160,110,110,8);
+    this.heroLabel=addBadge(this,96,GAME_TOP+238,'KOKO REDCHEEK',C.red,'#F7E7B7',158,10,'bold 16px "Trebuchet MS"');
+    this.nest=spriteFor(this,'goal','goalFallback',444,GAME_TOP+170,112,112,8);
+    this.nestLabel=addBadge(this,444,GAME_TOP+248,'COZY HOLLOW',C.gold,'#160f28',138,10,'bold 16px "Trebuchet MS"');
+    this.egg=spriteFor(this,'goal','goalFallback',444,GAME_TOP+312,66,66,8).setTint(0xfff2b0).setAlpha(0.92);
+    this.eggLabel=addBadge(this,444,GAME_TOP+374,'BABY HOPE EGG',C.mint,'#160f28',150,10,'bold 16px "Trebuchet MS"');
+    this.laneG=this.add.graphics().setDepth(2);
+    this.noteG=this.add.graphics().setDepth(6);
+    this.fxG=this.add.graphics().setDepth(7);
+    if(this.level.storm){
+      this.storm=spriteFor(this,'enemy','enemyFallback',CX,GAME_TOP+102,170,120,8);
+      this.stormLabel=addBadge(this,CX,GAME_TOP+170,'THE HOWLING GUST',C.red,'#F7E7B7',172,10,'bold 16px "Trebuchet MS"');
+      this.tweens.add({targets:this.storm,angle:3,duration:320,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    }
+  }
+  makePads(){
+    this.pads=[];
+    const names=['LEFT','MIDDLE','RIGHT'];
+    LANES.forEach((x,i)=>{
+      const pad=this.add.image(x,PAD_Y,'uiPad').setDepth(12).setInteractive();
+      pad.lane=i; this.pads.push(pad);
+      addBadge(this,x,PAD_Y-58,names[i],i===1?C.mint:C.gold,'#160f28',94,13,'bold 16px "Trebuchet MS"');
+      pad.on('pointerdown',()=>this.hitLane(i,true));
+      this.tweens.add({targets:pad,scaleX:1.05,scaleY:1.05,duration:720+80*i,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    });
+    if(!this.isTouch){ addBadge(this,CX,870,this.level.repairs?'A S D or arrows to drum • Click fix-up icons':'A S D or arrows to drum',C.gold,'#160f28',420,20,'bold 18px "Trebuchet MS"'); }
+    else { addBadge(this,CX,870,this.level.repairs?'Tap pads and tap glowing fix-ups':'Tap the pads on the beat',C.gold,'#160f28',420,20,'bold 18px "Trebuchet MS"'); }
+  }
+  bindInput(){
+    this.keys=this.input.keyboard.addKeys('A,S,D,LEFT,DOWN,RIGHT,SPACE,P');
+    this.input.keyboard.on('keydown-A',()=>this.hitLane(0,false));
+    this.input.keyboard.on('keydown-LEFT',()=>this.hitLane(0,false));
+    this.input.keyboard.on('keydown-S',()=>this.hitLane(1,false));
+    this.input.keyboard.on('keydown-DOWN',()=>this.hitLane(1,false));
+    this.input.keyboard.on('keydown-D',()=>this.hitLane(2,false));
+    this.input.keyboard.on('keydown-RIGHT',()=>this.hitLane(2,false));
+    this.input.keyboard.on('keydown-P',()=>this.togglePause());
+    this.input.on('pointerdown',pointer=>{
+      if(this.input.pointer1.isDown&&this.input.pointer2.isDown) this.togglePause();
+      if(this.repairActive && Phaser.Math.Distance.Between(pointer.x,pointer.y,this.repairActive.x,this.repairActive.y)<42) this.repairNest();
+    });
+  }
+  spawnNote(data){
+    this.notes.push({lane:data.lane,y:GAME_TOP+10,speed:this.level.speed,special:data.special&&this.level.storm,hit:false});
+    this.spawned++;
+  }
+  showGuide(text){ this.guideText=text; this.guideTimer=2.2; }
+  startHintArrows(){
+    if(this.guideArrow) return;
+    this.guideArrow=this.add.image(LANES[1],GAME_TOP+100,'uiArrow').setAngle(90).setDepth(30).setScale(1.2);
+    this.tweens.add({targets:this.guideArrow,y:'+=12',duration:460,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    this.hand=this.add.image(LANES[1],PAD_Y-92,'uiHand').setDepth(30);
+    this.tweens.add({targets:this.hand,y:'+=26',duration:360,yoyo:true,repeat:6,ease:'Sine.inOut'});
+    this.time.delayedCall(5000,()=>{ if(this.hand){ this.hand.destroy(); this.hand=null; } });
+  }
+  trySpawnRepair(){
+    if(!this.level.repairs || this.repairActive || this.spawned<6) return;
+    if(this.levelIndex===1 && this.spawned%8!==0) return;
+    if(this.levelIndex===2 && this.spawned%6!==0) return;
+    const x=[180,270,360][(this.spawned/2)%3|0], y=GAME_TOP+240+((this.spawned%2)*90);
+    const icon=this.add.image(x,y,'uiRepair').setDepth(11).setInteractive();
+    const arrow=this.add.image(x,y-60,'uiArrow').setAngle(90).setDepth(12);
+    this.tweens.add({targets:[icon,arrow],scaleX:1.08,scaleY:1.08,duration:520,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    icon.on('pointerdown',()=>this.repairNest());
+    this.repairActive={x,y,life:2.8,icon,arrow};
+    if(this.guideTime>0) this.showGuide('Tap the glowing fix-up icon!');
+  }
+  repairNest(){
+    if(!this.repairActive) return;
+    this.safety=Math.min(100,this.safety+10);
+    this.combo+=1; this.score+=120;
+    this.spark(this.repairActive.x,this.repairActive.y,C.green);
+    this.repairActive.icon.destroy(); this.repairActive.arrow.destroy(); this.repairActive=null;
+    this.showGuide('Nice! The nest feels snug again.');
+  }
+  hitLane(lane){
+    if(this.over||this.pauseText.visible) return;
+    const note=this.notes.filter(n=>!n.hit && n.lane===lane).sort((a,b)=>Math.abs(a.y-JUDGE_Y)-Math.abs(b.y-JUDGE_Y))[0];
+    this.flashPad(lane);
+    if(!note){ this.miss(3); return; }
+    const dist=Math.abs(note.y-JUDGE_Y);
+    if(dist<30) this.hitNote(note,dist<14?'perfect':'good');
+    else if(dist<62) this.hitNote(note,'okay');
+    else this.miss(2);
+  }
+  hitNote(note,grade){
+    note.hit=true;
+    const laneX=LANES[note.lane];
+    const add=grade==='perfect'?140:grade==='good'?100:70;
+    this.score+=add; this.combo+=1; this.safety=Math.min(100,this.safety+(grade==='okay'?2:4)); this.power=Math.min(100,this.power+(grade==='perfect'?12:8));
+    this.spark(laneX,JUDGE_Y, note.special?C.gold:C.mint);
+    if(note.special){ this.safety=Math.min(100,this.safety+12); this.score+=200; if(this.storm){ this.storm.setTintFill(0xfff0a0); this.time.delayedCall(180,()=>this.storm.clearTint()); } this.showGuide('Canopy Drum burst! The storm backs off.'); }
+  }
+  miss(amount){ this.combo=0; this.safety=Math.max(0,this.safety-amount); }
+  flashPad(lane){ const p=this.pads[lane]; if(!p) return; this.tweens.add({targets:p,scaleX:1.18,scaleY:1.18,duration:90,yoyo:true}); }
+  spark(x,y,color){ const s=this.add.image(x,y,'uiSpark').setTint(color).setScale(0.8).setDepth(20); this.tweens.add({targets:s,scale:2.8,alpha:0,duration:240,onComplete:()=>s.destroy()}); }
+  togglePause(){ if(this.over) return; this.pauseText.setVisible(!this.pauseText.visible); }
+  finishLevel(){
+    this.over=true;
+    if(this.levelIndex===LEVELS.length-1) this.scene.start('end',{score:this.score});
+    else this.scene.start('fact',{level:this.levelIndex,next:this.levelIndex+1,score:this.score,safety:this.safety,fact:this.level.fact,fail:false});
+  }
+  failLevel(){ this.over=true; this.scene.start('fact',{level:this.levelIndex,score:this.score,safety:this.safety,fail:true}); }
+  updateHud(){
+    this.topBadge.list[1].setText(`Score ${this.score}   Nest Safety ${roundNum(this.safety)}%   ${this.level.storm?`Drum Burst ${roundNum(this.power)}%`:`Combo ${this.combo}`}`);
+    if(!this.hudBars){ this.hudBars=this.add.graphics().setDepth(22); }
+    this.hudBars.clear();
+    this.hudBars.fillStyle(0x1c1432).fillRoundedRect(12,62,516,18,8);
+    this.hudBars.fillStyle(C.green).fillRoundedRect(14,64,Math.max(6,512*this.safety/100),14,7);
+    if(this.level.storm){ this.hudBars.fillStyle(0x1c1432).fillRoundedRect(12,84,516,14,7); this.hudBars.fillStyle(C.gold).fillRoundedRect(14,86,Math.max(0,512*this.power/100),10,6); }
+    if(!this.guideBadge) this.guideBadge=addBadge(this,CX,844,'',C.gold,'#160f28',420,22,'bold 18px "Trebuchet MS"');
+    if(this.guideTimer>0&&this.guideText) this.guideBadge.list[1].setText(this.guideText);
+    else this.guideBadge.list[1].setText(this.levelIndex===0?'Tap pads on the beat':this.level.repairs?'Drum, then tap fix-up icons when they glow':'Keep the beat');
+  }
+  updateNotes(delta){
+    this.musicClock+=delta;
+    while(this.nextIdx<this.pattern.length && this.musicClock>=this.pattern[this.nextIdx].time){ this.spawnNote(this.pattern[this.nextIdx]); this.nextIdx++; this.trySpawnRepair(); }
+    if(this.levelIndex===0 && !this.samplePlayed && this.notes.length>=1){ this.startHintArrows(); this.samplePlayed=true; }
+    this.noteG.clear();
+    this.laneG.clear();
+    LANES.forEach((x,i)=>{
+      this.laneG.lineStyle(6,0xffffff,0.10).lineBetween(x,GAME_TOP+90,x,JUDGE_Y+8);
+      this.laneG.lineStyle(3,C.cream,0.28).lineBetween(x-38,JUDGE_Y+14,x+38,JUDGE_Y+14);
+    });
+    this.notes=this.notes.filter(n=>{
+      if(!n.hit) n.y+=n.speed*(delta/1000);
+      const x=LANES[n.lane];
+      if(!n.hit){
+        if(this.levelIndex===0 && this.autoDemoHits>0 && Math.abs(n.y-JUDGE_Y)<10){ this.hitNote(n,'perfect'); this.autoDemoHits--; }
+        const key=n.special?'uiRepair':'uiNote';
+        this.noteG.fillStyle(n.special?C.gold:C.mint,1).fillRoundedRect(x-17,n.y-17,34,34,8);
+        this.noteG.lineStyle(3,C.cream).strokeRoundedRect(x-17,n.y-17,34,34,8);
+      }
+      if(!n.hit && n.y>JUDGE_Y+58){ this.miss(5); return false; }
+      if(n.hit){ this.cleared++; return false; }
+      return true;
+    });
+    if(this.repairActive){
+      this.repairActive.life-=delta/1000;
+      if(this.repairActive.life<=0){ this.safety=Math.max(0,this.safety-10); this.repairActive.icon.destroy(); this.repairActive.arrow.destroy(); this.repairActive=null; this.showGuide('The nest got a bit shaky!'); }
+    }
+    if(this.nextIdx>=this.pattern.length && this.notes.length===0 && !this.over) this.finishLevel();
+  }
+  updateActors(time,dt){
+    this.hero.y=GAME_TOP+160+Math.sin(time*0.008)*5;
+    this.nest.y=GAME_TOP+170+Math.cos(time*0.007)*4;
+    this.egg.angle=Math.sin(time*0.01)*4;
+    if(this.storm){ this.storm.x=CX+Math.sin(time*0.004)*18; this.storm.y=GAME_TOP+102+Math.cos(time*0.005)*6; }
+  }
+  update(time,delta){
+    animateBg(this,time);
+    if(this.over) return;
+    if(this.pauseText.visible){ this.updateHud(); return; }
+    const dt=delta/1000;
+    if(this.guideTime>0) this.guideTime-=dt;
+    if(this.guideTimer>0) this.guideTimer-=dt;
+    this.safety=Math.max(0,this.safety-this.level.drain*dt);
+    if(this.level.storm && this.power>=100){ this.showGuide('A gold burst beat is ready! Hit it on time!'); }
+    this.updateNotes(delta);
+    this.updateActors(time,dt);
+    this.updateHud();
+    if(this.safety<=0) this.failLevel();
+  }
+}
+
+new Phaser.Game({
+  type:Phaser.AUTO,
+  width:W,
+  height:H,
+  pixelArt:true,
+  backgroundColor:'#1F1A38',
+  scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH,parent:document.body},
+  scene:[BootScene,TitleScene,PlayScene,FactScene,EndScene],
+  input:{activePointers:3},
+  render:{pixelArt:true,roundPixels:true,antialias:false}
+});
+</script>
+</body>
+</html>
