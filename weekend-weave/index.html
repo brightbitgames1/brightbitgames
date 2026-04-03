@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Weekend Weave</title>
+<style>
+  html,body{margin:0;height:100%;background:#1E1B2E;overflow:hidden;font-family:"Trebuchet MS",Verdana,Arial,sans-serif}
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{image-rendering:pixelated;image-rendering:crisp-edges;touch-action:none}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
+</head>
+<body>
+<script>
+const W=540,H=960,HUD_H=60,CTRL_H=120,GAME_TOP=HUD_H,GAME_BOTTOM=H-CTRL_H,GAME_H=GAME_BOTTOM-GAME_TOP,CX=W/2;
+const C={bg:0x2a2342,pink:0xFF8FAB,gold:0xFFD166,sky:0x7BDFF2,green:0x95D5B2,purple:0xB8A1FF,cream:0xFFF7E6,panel:0x3e315f,panel2:0x5b4a84,ink:0x161027,red:0xD95A7B};
+const STORY='The real story behind this game is that Japan changed its law so divorced parents can now seek joint custody through family courts. That matters because many children may have a better chance to keep meaningful relationships with both parents after a divorce. The change is about creating more ways for families to stay connected, supported, and involved in everyday life.';
+const CTA='Celebrate care that lasts — small shared moments can build a stronger future.';
+const FACTS=[
+  'Children often benefit when caring adults stay involved in their lives and routines.',
+  'Japan’s law change created a new path for shared parenting after divorce through family courts.'
+];
+const LEVELS=[
+  {name:'Saturday Starts', subtitle:'Drag simple day tiles into the planner in the right order.', target:['Home Hop','Noodle Time','Sleepy Star'], comfort:78, drain:2.0, bag:false, loop:false, fact:FACTS[0]},
+  {name:'Festival Juggle', subtitle:'Drag tiles and tap Bag Check when little mix-ups pop up.', target:['Home Hop','Art Show','Grandma Hug','Sleepy Star'], comfort:74, drain:3.0, bag:true, loop:false, fact:FACTS[1]},
+  {name:'Lantern Calendar', subtitle:'Finish the big evening plan with Bag Check help and Golden Loop.', target:['Smooth Ride','Home Hop','Festival Glow','Photo Time','Sleepy Star'], comfort:76, drain:4.0, bag:true, loop:true, fact:null}
+];
+const TILE_INFO={
+  'Home Hop':{color:0x7BDFF2, fact:'Clear pickup plans help everyone feel steady.'},
+  'Bag Check':{color:0xFFD166, fact:'Favorite things can make moving between places easier.'},
+  'Smooth Ride':{color:0x95D5B2, fact:'Travel planning helps families arrive on time.'},
+  'Noodle Time':{color:0xFF8FAB, fact:'Shared meals can make busy days feel warmer.'},
+  'Sleepy Star':{color:0xB8A1FF, fact:'Calm bedtime routines help everyone rest.'},
+  'Art Show':{color:0xFFD166, fact:'Special events are easier when the plan is shared.'},
+  'Grandma Hug':{color:0x95D5B2, fact:'Family support can make big days feel lighter.'},
+  'Festival Glow':{color:0xFF8FAB, fact:'Shared memories can turn a busy day into a bright one.'},
+  'Photo Time':{color:0x7BDFF2, fact:'Small moments together can become big memories.'}
+};
+function roundNum(n){return Math.max(0,Math.round(n));}
+function addBadge(scene,x,y,text,fill=C.panel,textColor='#FFF7E6',width=null,depth=20,font='bold 16px "Trebuchet MS"'){
+  const t=scene.add.text(0,0,text,{font,fill:textColor,align:'center',wordWrap:width?{width:width-24}:undefined,lineSpacing:4}).setOrigin(0.5);
+  const w=width||Math.max(76,t.width+24), h=Math.max(30,t.height+14);
+  const g=scene.add.graphics();
+  g.fillStyle(fill,1).lineStyle(3,C.cream,0.95).fillRoundedRect(-w/2,-h/2,w,h,12).strokeRoundedRect(-w/2,-h/2,w,h,12);
+  return scene.add.container(x,y,[g,t]).setDepth(depth);
+}
+function addButton(scene,x,y,w,h,text,fill,textColor='#161027'){
+  const r=scene.add.rectangle(x,y,w,h,fill).setStrokeStyle(5,C.cream).setInteractive();
+  const t=scene.add.text(x,y,text,{font:'bold 22px "Trebuchet MS"',fill:textColor}).setOrigin(0.5);
+  scene.tweens.add({targets:r,scaleX:1.04,scaleY:1.04,duration:760,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+  return {rect:r,text:t};
+}
+function makeUi(scene){
+  if(scene.textures.exists('bagIcon')) return;
+  const g=scene.make.graphics({x:0,y:0,add:false});
+  g.fillStyle(C.gold).fillRoundedRect(0,0,90,90,20).lineStyle(4,C.cream).strokeRoundedRect(0,0,90,90,20).fillStyle(C.ink).fillRect(22,34,46,18); g.generateTexture('tileBack',90,90); g.clear();
+  g.fillStyle(C.gold).fillRoundedRect(6,12,30,24,8).fillStyle(C.cream).fillRoundedRect(12,18,18,14,5).lineStyle(3,C.cream).strokeRoundedRect(6,12,30,24,8); g.generateTexture('bagIcon',42,42); g.clear();
+  g.fillStyle(C.gold).fillTriangle(10,12,28,2,28,22).fillStyle(C.cream).fillRect(0,9,16,6); g.generateTexture('uiArrow',30,24); g.clear();
+  g.fillStyle(C.cream).fillRect(16,4,14,16).fillRect(8,18,24,20).fillRect(32,12,8,18).fillStyle(C.red).fillRect(20,18,8,2).fillStyle(C.ink).fillRect(18,12,3,3).fillRect(25,12,3,3); g.generateTexture('uiHand',52,44); g.clear();
+  g.fillStyle(C.gold).fillRect(6,6,12,12).fillStyle(C.cream).fillRect(8,8,8,8); g.generateTexture('uiSpark',24,24); g.clear();
+  g.fillStyle(C.green).fillRoundedRect(0,0,54,54,18).lineStyle(4,C.cream).strokeRoundedRect(0,0,54,54,18).fillStyle(C.cream).fillRect(10,24,34,8).fillRect(24,10,8,34); g.generateTexture('glowSpot',54,54); g.clear();
+  g.fillStyle(C.gold).fillEllipse(18,22,18,26).lineStyle(2,C.pink).strokeEllipse(18,22,18,26).fillStyle(C.cream).fillCircle(18,18,4); g.generateTexture('albumMini',36,42); g.clear();
+  g.fillStyle(C.sky).fillRoundedRect(0,0,50,34,10).lineStyle(3,C.cream).strokeRoundedRect(0,0,50,34,10).fillStyle(C.cream).fillRect(10,12,30,10); g.generateTexture('trainMini',50,34); g.clear();
+  g.fillStyle(C.pink).fillCircle(26,26,22).lineStyle(3,C.cream).strokeCircle(26,26,22).fillStyle(C.cream).fillCircle(18,20,4).fillCircle(34,20,4).fillStyle(C.ink).fillCircle(18,20,2).fillCircle(34,20,2).fillRect(16,32,20,3); g.generateTexture('homeMini',52,52); g.destroy();
+}
+function whiteToAlpha(scene, rawKey, outKey){
+  if(scene.textures.exists(outKey)||!scene.textures.exists(rawKey)) return;
+  const img=scene.textures.get(rawKey).getSourceImage();
+  const src=document.createElement('canvas'); src.width=img.width; src.height=img.height;
+  const ctx=src.getContext('2d',{willReadFrequently:true}); ctx.drawImage(img,0,0);
+  const data=ctx.getImageData(0,0,src.width,src.height); let minX=src.width,minY=src.height,maxX=-1,maxY=-1;
+  for(let i=0;i<data.data.length;i+=4){
+    const r=data.data[i],g=data.data[i+1],b=data.data[i+2],a=data.data[i+3],x=(i/4)%src.width,y=((i/4)/src.width)|0;
+    if(a&&r>244&&g>244&&b>244) data.data[i+3]=0;
+    else if(data.data[i+3]){ if(x<minX)minX=x; if(y<minY)minY=y; if(x>maxX)maxX=x; if(y>maxY)maxY=y; }
+  }
+  ctx.putImageData(data,0,0);
+  if(maxX<0){ scene.textures.addImage(outKey,img); return; }
+  const pad=2,w=maxX-minX+1,h=maxY-minY+1;
+  const out=document.createElement('canvas'); out.width=w+pad*2; out.height=h+pad*2;
+  out.getContext('2d').drawImage(src,minX,minY,w,h,pad,pad,w,h);
+  scene.textures.addCanvas(outKey,out);
+}
+function spr(scene,key,fb,x,y,w,h,depth=8){ const k=scene.textures.exists(key)?key:fb; return scene.add.image(x,y,k).setDisplaySize(w,h).setDepth(depth); }
+function drawTown(scene,mode){
+  scene.add.rectangle(CX,H/2,W,H,C.bg);
+  scene.add.rectangle(CX,HUD_H/2,W,HUD_H,C.panel);
+  scene.add.rectangle(CX,H-CTRL_H/2,W,CTRL_H,C.panel);
+  scene.add.rectangle(CX,HUD_H+GAME_H/2,W,GAME_H,0x6a9bb0);
+  if(scene.textures.exists('bgMain')){
+    scene.add.image(CX,HUD_H+GAME_H/2,'bgMain').setDisplaySize(W-14,GAME_H-14).setDepth(0).setAlpha(0.76);
+    scene.add.image(CX+10,HUD_H+GAME_H/2+10,'bgMain').setDisplaySize(W-38,GAME_H-44).setDepth(0).setAlpha(0.18).setTint(mode==='festival'?0xffdfa0:0xfff2d0);
+  }
+  scene.add.rectangle(CX,HUD_H+GAME_H/2,W-14,GAME_H-14,C.panel2,0.14).setStrokeStyle(4,C.cream,0.36).setDepth(1);
+  const g=scene.add.graphics().setDepth(2);
+  g.fillStyle(0xd8c8b3).fillRoundedRect(36,146,132,108,16).fillRoundedRect(374,146,132,108,16).fillRoundedRect(208,168,120,90,16).fillRoundedRect(188,430,164,90,16);
+  g.fillStyle(0xc7b39a).fillRect(74,112,56,34).fillRect(412,112,56,34).fillRect(236,136,64,30);
+  g.fillStyle(0xf3c56b).fillCircle(98,204,10).fillCircle(442,204,10).fillCircle(238,470,10).fillCircle(304,470,10);
+  g.fillStyle(0x6fbf6c).fillCircle(58,308,24).fillCircle(488,334,26).fillCircle(86,520,24).fillCircle(468,520,28);
+  g.fillStyle(0xa2d7f2).fillRect(212,278,116,54);
+  scene.bgFloaters=[];
+  for(let i=0;i<10;i++){ const leaf=scene.add.ellipse(36+(i*52)%W,92+(i*74)%H,20+(i%3)*8,14+(i%2)*4,[C.green,C.gold,C.sky][i%3],0.16).setDepth(1); leaf.baseX=leaf.x; leaf.baseY=leaf.y; leaf.seed=i*.76; scene.bgFloaters.push(leaf); }
+}
+function animateBg(scene,t){ if(scene.bgFloaters) scene.bgFloaters.forEach((f,i)=>{ f.x=f.baseX+Math.sin(t*0.0005+f.seed)*(i%2?8:5); f.y=f.baseY+Math.cos(t*0.0004+f.seed)*(i%2?5:3); }); }
+function tileChoices(level){
+  const extras=['Home Hop','Bag Check','Smooth Ride','Noodle Time','Sleepy Star','Art Show','Grandma Hug','Festival Glow','Photo Time'];
+  return [...new Set([...level.target,...extras])].slice(0,level.target.length+2);
+}
+
+class Boot extends Phaser.Scene{
+  constructor(){super('boot');}
+  preload(){
+    this.add.rectangle(CX,H/2,W,H,C.bg);
+    this.add.text(CX,410,'LOADING WEEKEND WEAVE',{font:'bold 28px "Trebuchet MS"',fill:'#FFF7E6'}).setOrigin(0.5);
+    this.add.rectangle(CX,474,340,28,0x2a1f47).setStrokeStyle(4,C.cream);
+    const bar=this.add.rectangle(CX-166,474,0,20,C.gold).setOrigin(0,0.5);
+    this.load.on('progress',v=>bar.width=332*v);
+    this.load.image('rawHero','assets/sprite-hero.png');
+    this.load.image('rawEnemy','assets/sprite-enemy.png');
+    this.load.image('rawGoal','assets/sprite-goal.png');
+    this.load.image('bgMain','assets/bg-main.png');
+  }
+  create(){ makeUi(this); whiteToAlpha(this,'rawHero','hero'); whiteToAlpha(this,'rawEnemy','enemy'); whiteToAlpha(this,'rawGoal','goal'); this.scene.start('legend'); }
+}
+
+class Legend extends Phaser.Scene{
+  constructor(){super('legend');}
+  create(){
+    drawTown(this,'legend');
+    spr(this,'hero','homeMini',36,30,40,40,20); spr(this,'goal','homeMini',74,22,26,26,20);
+    addBadge(this,CX,18,'WEEKEND WEAVE',C.panel2,'#FFF7E6',240,20,'bold 22px "Trebuchet MS"');
+    addBadge(this,CX,44,'Stitch busy days together and keep every heart in the picture.',0x5b4a84,'#FFF7E6',400,20,'bold 14px "Trebuchet MS"');
+    const pW=490,pH=650,pX=CX,pY=GAME_TOP+GAME_H/2-2;
+    this.add.graphics().fillStyle(C.panel,0.96).lineStyle(4,C.cream,0.95).fillRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28).strokeRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28);
+    addBadge(this,pX,pY-pH/2+32,'FAMILY FRIEND GUIDE',C.green,'#161027',250,10,'bold 22px "Trebuchet MS"');
+    const cards=[
+      {x:pX-146,y:pY-118,key:'hero',fb:'homeMini',size:[70,70],name:'Mimo the Ribbon Fox',fact:'A good plan can make busy days feel smoother for everyone.'},
+      {x:pX+146,y:pY-118,key:'tileBack',fb:'tileBack',size:[62,62],name:'Home Hop',fact:'Kids often do best when important routines feel clear and steady.'},
+      {x:pX-146,y:pY+78,key:'bagIcon',fb:'bagIcon',size:[54,54],name:'Bag Check',fact:'Remembering favorite things can make moving between places easier.'},
+      {x:pX+146,y:pY+78,key:'trainMini',fb:'trainMini',size:[70,48],name:'Smooth Ride',fact:'Travel planning helps families arrive on time and feel less rushed.'},
+      {x:pX-146,y:pY+244,key:'enemy',fb:'homeMini',size:[82,64],name:'Stress Cloud',fact:'Too many surprises in one day can make anyone feel overwhelmed.'},
+      {x:pX+146,y:pY+244,key:'goal',fb:'albumMini',size:[72,72],name:'Memory Album',fact:'Shared everyday moments help families stay connected.'}
+    ];
+    cards.forEach((c,i)=>{
+      const w=196,h=142;
+      this.add.graphics().fillStyle(0x2a1f49,0.96).lineStyle(3,C.cream,0.9).fillRoundedRect(c.x-w/2,c.y-h/2,w,h,20).strokeRoundedRect(c.x-w/2,c.y-h/2,w,h,20);
+      const img=this.add.image(c.x,c.y-16, this.textures.exists(c.key)?c.key:c.fb).setDisplaySize(c.size[0],c.size[1]).setDepth(8);
+      this.tweens.add({targets:img,scaleX:1.08,scaleY:1.08,duration:700+80*i,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+      addBadge(this,c.x,c.y+28,c.name,C.gold,'#161027',140,9,'bold 17px "Trebuchet MS"');
+      this.add.text(c.x,c.y+68,c.fact,{font:'16px "Trebuchet MS"',fill:'#FFF7E6',align:'center',wordWrap:{width:158},lineSpacing:4}).setOrigin(0.5);
+    });
+    this.hand=this.add.image(pX-146,pY-118,'uiHand').setDepth(20);
+    this.tweens.add({targets:this.hand,x:pX+146,duration:1200,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    addBadge(this,CX,868,'Level 1 starts simple: drag the right tile into the first planner slot.',C.gold,'#161027',430,20,'bold 18px "Trebuchet MS"');
+    const btn=addButton(this,CX,920,292,64,'START PLANNING',C.gold,'#161027');
+    btn.rect.on('pointerdown',()=>this.scene.start('play',{levelIndex:0}));
+    this.input.keyboard.on('keydown-SPACE',()=>this.scene.start('play',{levelIndex:0}));
+  }
+  update(t){ animateBg(this,t); }
+}
+
+class Fact extends Phaser.Scene{
+  constructor(){super('fact');}
+  init(data){ this.info=data; }
+  create(){
+    drawTown(this,this.info.fail?'storm':'fact');
+    spr(this,'hero','homeMini',36,30,40,40,20); spr(this,'goal','albumMini',74,22,26,26,20);
+    addBadge(this,CX,18,this.info.fail?'TRY AGAIN':'FUN FACT CARD',this.info.fail?C.red:C.green,this.info.fail?'#FFF7E6':'#161027',220,20,'bold 22px "Trebuchet MS"');
+    const pW=470,pH=560,pX=CX,pY=GAME_TOP+GAME_H/2;
+    this.add.graphics().fillStyle(C.panel,0.96).lineStyle(4,C.cream,0.95).fillRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28).strokeRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28);
+    if(this.info.fail){
+      spr(this,'enemy','homeMini',CX,pY-126,128,96,8);
+      addBadge(this,CX,pY-34,'The day got too tangled!',C.red,'#FFF7E6',248,9,'bold 24px "Trebuchet MS"');
+      this.add.text(CX,pY+32,'Try again and place the right planner tiles sooner. In later levels, tap Bag Check before the mix-up timer runs out.',{font:'20px "Trebuchet MS"',fill:'#FFF7E6',align:'center',wordWrap:{width:394},lineSpacing:8}).setOrigin(0.5);
+    }else{
+      spr(this,'goal','albumMini',CX,pY-126,120,120,8);
+      addBadge(this,CX,pY-34,'Family fact',C.gold,'#161027',180,9,'bold 24px "Trebuchet MS"');
+      this.add.text(CX,pY+16,this.info.fact,{font:'21px "Trebuchet MS"',fill:'#FFF7E6',align:'center',wordWrap:{width:396},lineSpacing:8}).setOrigin(0.5);
+      addBadge(this,CX,pY+148,`Next: ${LEVELS[this.info.next].name}`,C.green,'#161027',240,9,'bold 20px "Trebuchet MS"');
+      this.add.text(CX,pY+196,LEVELS[this.info.next].subtitle,{font:'18px "Trebuchet MS"',fill:'#FFF7E6',align:'center',wordWrap:{width:382},lineSpacing:6}).setOrigin(0.5);
+    }
+    addBadge(this,CX,868,`Stars ${this.info.score}   Comfort ${roundNum(this.info.comfort)}%   Tangles ${this.info.tangles}`,C.panel2,'#FFF7E6',340,20,'bold 18px "Trebuchet MS"');
+    const btn=addButton(this,CX,920,270,64,this.info.fail?'TRY AGAIN':'NEXT LEVEL',this.info.fail?C.red:C.gold,this.info.fail?'#FFF7E6':'#161027');
+    btn.rect.on('pointerdown',()=>this.scene.start('play',{levelIndex:this.info.fail?this.info.level:this.info.next}));
+    this.input.keyboard.on('keydown-SPACE',()=>this.scene.start('play',{levelIndex:this.info.fail?this.info.level:this.info.next}));
+  }
+  update(t){ animateBg(this,t); }
+}
+
+class End extends Phaser.Scene{
+  constructor(){super('end');}
+  init(data){ this.info=data||{}; }
+  create(){
+    drawTown(this,'festival');
+    spr(this,'hero','homeMini',36,30,40,40,20); spr(this,'goal','albumMini',74,22,26,26,20);
+    addBadge(this,CX,18,'THE MEMORY PAGE GLOWED!',C.green,'#161027',270,20,'bold 22px "Trebuchet MS"');
+    const pW=486,pH=664,pX=CX,pY=GAME_TOP+GAME_H/2-4;
+    this.add.graphics().fillStyle(C.panel,0.96).lineStyle(4,C.cream,0.95).fillRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28).strokeRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28);
+    spr(this,'hero','homeMini',CX-52,pY-pH/2+88,106,106,8);
+    spr(this,'goal','albumMini',CX+64,pY-pH/2+88,112,112,8);
+    addBadge(this,CX,pY-pH/2+176,'What the real story means',C.gold,'#161027',276,9,'bold 22px "Trebuchet MS"');
+    this.add.text(CX,pY-pH/2+220,'Japan changed its law so divorced parents can now ask for joint custody through family courts. That matters because many children may have a better chance to keep meaningful relationships with both parents after a divorce. The change is about helping families stay connected, supported, and involved in everyday life.',{font:'18px "Trebuchet MS"',fill:'#FFF7E6',align:'center',wordWrap:{width:420},lineSpacing:7}).setOrigin(0.5,0);
+    addBadge(this,CX,pY+104,'Exact story text from the brief',C.green,'#161027',250,9,'bold 18px "Trebuchet MS"');
+    this.add.text(CX,pY+136,STORY,{font:'16px "Trebuchet MS"',fill:'#FFF7E6',align:'center',wordWrap:{width:422},lineSpacing:6}).setOrigin(0.5,0);
+    this.add.text(CX,pY+246,CTA,{font:'bold 18px "Trebuchet MS"',fill:'#FFD166',align:'center',wordWrap:{width:414},lineSpacing:6}).setOrigin(0.5,0);
+    const btn=addButton(this,CX,920,250,64,'PLAY AGAIN',C.gold,'#161027');
+    btn.rect.on('pointerdown',()=>this.scene.start('play',{levelIndex:0}));
+    this.input.keyboard.on('keydown-SPACE',()=>this.scene.start('play',{levelIndex:0}));
+  }
+  update(t){ animateBg(this,t); }
+}
+
+class Play extends Phaser.Scene{
+  constructor(){super('play');}
+  init(data){ this.levelIndex=data.levelIndex||0; }
+  create(){
+    this.level=LEVELS[this.levelIndex];
+    this.isTouch=!!this.sys.game.device.input.touch;
+    this.paused=false; this.done=false; this.progress=0; this.score=0; this.tangles=0; this.comfort=this.level.comfort; this.loop=0; this.focusIndex=0;
+    this.guideText=''; this.guideTimer=0; this.pendingBag=null; this.dragTile=null; this.tileChoices=tileChoices(this.level);
+    drawTown(this,this.level.loop?'festival':'play');
+    this.makeHud(); this.makeScene(); this.makePlanner(); this.makeTiles(); this.makeControls(); this.bindInput(); this.startTutorial();
+  }
+  makeHud(){
+    spr(this,'hero','homeMini',34,30,40,40,20); spr(this,'goal','albumMini',74,22,26,26,20);
+    addBadge(this,CX,18,`Level ${this.levelIndex+1}: ${this.level.name}`,C.panel2,'#FFF7E6',290,20,'bold 18px "Trebuchet MS"');
+    this.topBadge=addBadge(this,CX,44,'',C.panel,'#FFF7E6',430,20,'bold 15px "Trebuchet MS"');
+    this.pauseText=this.add.text(CX,GAME_TOP+GAME_H/2,'PAUSED',{font:'bold 46px "Trebuchet MS"',fill:'#FFD166'}).setOrigin(0.5).setDepth(40).setVisible(false);
+    this.barG=this.add.graphics().setDepth(25);
+  }
+  makeScene(){
+    this.hero=spr(this,'hero','homeMini',86,GAME_TOP+192,110,110,8);
+    this.heroLabel=addBadge(this,86,GAME_TOP+272,'MIMO THE RIBBON FOX',C.pink,'#161027',170,10,'bold 16px "Trebuchet MS"');
+    this.album=spr(this,'goal','albumMini',432,GAME_TOP+604,118,118,8);
+    this.albumLabel=addBadge(this,432,GAME_TOP+684,'MEMORY ALBUM',C.gold,'#161027',150,10,'bold 16px "Trebuchet MS"');
+    this.homeA=this.add.image(104,GAME_TOP+388,'homeMini').setDisplaySize(84,84).setDepth(8);
+    this.homeB=this.add.image(438,GAME_TOP+388,'homeMini').setDisplaySize(84,84).setDepth(8).setTint(0xffd6ef);
+    this.train=this.add.image(270,GAME_TOP+348,'trainMini').setDisplaySize(100,66).setDepth(8);
+    this.trainLabel=addBadge(this,270,GAME_TOP+414,'SMOOTH RIDE',C.sky,'#161027',126,10,'bold 16px "Trebuchet MS"');
+    this.kid=this.add.image(270,GAME_TOP+208,'albumMini').setDisplaySize(58,66).setDepth(8).setTint(0xfff1b0);
+    this.kidLabel=addBadge(this,270,GAME_TOP+272,'HAPPY KID',C.green,'#161027',116,10,'bold 16px "Trebuchet MS"');
+    if(this.level.loop){
+      this.cloud=spr(this,'enemy','homeMini',270,GAME_TOP+108,150,104,8);
+      this.cloudLabel=addBadge(this,270,GAME_TOP+170,'STRESS CLOUD',C.red,'#FFF7E6',142,10,'bold 16px "Trebuchet MS"');
+      this.tweens.add({targets:this.cloud,angle:3,duration:240,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    }
+  }
+  makePlanner(){
+    this.slots=[];
+    const startX=70, gap=98, y=GAME_TOP+506;
+    this.plannerBg=this.add.graphics().setDepth(6);
+    this.plannerBg.fillStyle(0xfff7f0,0.9).lineStyle(4,C.cream).fillRoundedRect(32,y-62,476,136,24).strokeRoundedRect(32,y-62,476,136,24);
+    addBadge(this,CX,y-82,'TODAY PLANNER',C.purple,'#FFF7E6',180,10,'bold 18px "Trebuchet MS"');
+    this.level.target.forEach((name,i)=>{
+      const x=startX+i*gap;
+      const box=this.add.rectangle(x,y,78,96,0xffffff,0.16).setStrokeStyle(4,C.cream,0.7).setDepth(7);
+      const label=addBadge(this,x,y+66,name,C.panel2,'#FFF7E6',84,8,'bold 14px "Trebuchet MS"');
+      this.slots.push({x,y,name,box,label,filled:false});
+    });
+  }
+  makeTile(name,x,y){
+    const c=this.add.container(x,y).setDepth(18).setSize(88,88).setInteractive(new Phaser.Geom.Rectangle(-44,-44,88,88),Phaser.Geom.Rectangle.Contains);
+    const g=this.add.graphics();
+    const fill=TILE_INFO[name]?.color || C.gold;
+    g.fillStyle(fill,1).lineStyle(4,C.cream).fillRoundedRect(-42,-42,84,84,18).strokeRoundedRect(-42,-42,84,84,18);
+    const t=this.add.text(0,0,name,{font:'bold 14px "Trebuchet MS"',fill:'#161027',align:'center',wordWrap:{width:68}}).setOrigin(0.5);
+    c.add([g,t]); c.tileName=name; c.homeX=x; c.homeY=y; return c;
+  }
+  makeTiles(){
+    this.tiles=[];
+    const rowY=914;
+    this.tileChoices.slice(0,5).forEach((name,i)=>{ this.tiles.push(this.makeTile(name,58+i*96,rowY)); });
+  }
+  makeControls(){
+    if(this.level.loop){ this.loopBtn=addButton(this,450,846,122,56,'GOLDEN LOOP',C.purple,'#FFF7E6'); this.loopBtn.rect.on('pointerdown',()=>this.useLoop()); }
+    this.ctrlBadge=addBadge(this,CX,846,this.level.bag?'Drag planner tiles, then tap Bag Check when it glows.':'Drag the planner tiles into the right order.',C.gold,'#161027',430,20,'bold 18px "Trebuchet MS"');
+  }
+  bindInput(){
+    this.tiles.forEach(tile=>tile.on('pointerdown',p=>this.startDrag(tile,p)));
+    this.input.on('pointermove',p=>this.dragMove(p));
+    this.input.on('pointerup',p=>this.endDrag(p));
+    this.input.on('pointerdown',p=>{ if(this.input.pointer1.isDown&&this.input.pointer2.isDown) this.togglePause(); if(this.pendingBag && Phaser.Math.Distance.Between(p.x,p.y,this.pendingBag.x,this.pendingBag.y)<46) this.tapBag(); });
+    this.keys=this.input.keyboard.addKeys('W,A,S,D,LEFT,RIGHT,UP,DOWN,SPACE,P');
+    this.input.keyboard.on('keydown-P',()=>this.togglePause());
+    this.input.keyboard.on('keydown-SPACE',()=>this.useLoop());
+  }
+  togglePause(){ if(this.done) return; this.paused=!this.paused; this.pauseText.setVisible(this.paused); }
+  startTutorial(){
+    this.showGuide(this.levelIndex===0?'Drag Home Hop into the first planner slot.' : 'Drag the next planner tile, then watch for Bag Check.',3);
+    const first=this.tiles.find(t=>t.tileName===this.level.target[0])||this.tiles[0];
+    this.arrow=this.add.image(first.x,first.y-74,'uiArrow').setAngle(90).setDepth(30).setScale(1.2);
+    this.hand=this.add.image(first.x,first.y+76,'uiHand').setDepth(30);
+    this.tweens.add({targets:this.hand,x:this.slots[0].x,y:this.slots[0].y+60,duration:1200,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    this.tweens.add({targets:this.arrow,y:'-=14',duration:500,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    this.time.delayedCall(5000,()=>{ if(this.hand){ this.hand.destroy(); this.hand=null; } });
+    this.time.delayedCall(10000,()=>{ if(this.arrow){ this.arrow.destroy(); this.arrow=null; } });
+  }
+  showGuide(text,time=2){ this.guideText=text; this.guideTimer=time; }
+  startDrag(tile,pointer){ if(this.done||this.paused||this.pendingBag) return; this.dragTile=tile; this.dragPointer=pointer.id; tile.setDepth(30); }
+  dragMove(pointer){ if(!this.dragTile||pointer.id!==this.dragPointer) return; this.dragTile.setPosition(pointer.x,pointer.y); }
+  endDrag(pointer){
+    if(!this.dragTile||pointer.id!==this.dragPointer) return;
+    const tile=this.dragTile; this.dragTile=null; this.dragPointer=null;
+    const slot=this.slots[this.progress];
+    if(slot && Phaser.Math.Distance.Between(pointer.x,pointer.y,slot.x,slot.y)<60 && tile.tileName===slot.name){
+      tile.setPosition(slot.x,slot.y).disableInteractive(); tile.setDepth(9); slot.filled=true;
+      this.progress++; this.score+=110; this.comfort=Math.min(100,this.comfort+8); this.loop=Math.min(100,this.loop+15); this.spark(slot.x,slot.y,TILE_INFO[tile.tileName].color); this.showGuide('Nice! That moment fits smoothly.',1.4);
+      if(this.level.bag && (this.progress===2 || (this.level.loop&&this.progress===4))){ this.spawnBag(); }
+      else if(this.progress>=this.level.target.length) this.finishLevel();
+    }else{
+      tile.setPosition(tile.homeX,tile.homeY).setDepth(18);
+      this.comfort=Math.max(0,this.comfort-4); this.tangles++; this.showGuide('That tile does not fit there yet.',1.2);
+    }
+  }
+  spawnBag(){
+    const x=this.level.loop?370:430, y=GAME_TOP+544;
+    this.pendingBag={x,y,life:5.5};
+    this.bagGlow=this.add.image(x,y,'bagIcon').setDisplaySize(56,56).setDepth(22);
+    this.bagArrow=this.add.image(x,y-56,'uiArrow').setAngle(90).setDepth(23);
+    this.tweens.add({targets:[this.bagGlow,this.bagArrow],scaleX:1.08,scaleY:1.08,duration:520,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    this.showGuide('Tap Bag Check before the mix-up timer runs out!',2.2);
+  }
+  tapBag(){
+    if(!this.pendingBag) return;
+    this.score+=140; this.comfort=Math.min(100,this.comfort+10); this.loop=Math.min(100,this.loop+10); this.spark(this.pendingBag.x,this.pendingBag.y,C.green); this.clearBag();
+    this.showGuide('Bag Check done! The handoff feels calmer.',1.5);
+    if(this.progress>=this.level.target.length) this.finishLevel();
+  }
+  clearBag(){ if(this.bagGlow){ this.bagGlow.destroy(); this.bagGlow=null; } if(this.bagArrow){ this.bagArrow.destroy(); this.bagArrow=null; } this.pendingBag=null; }
+  useLoop(){
+    if(!this.level.loop || this.loop<100 || this.done || this.paused) return;
+    this.loop=0; this.score+=220; this.comfort=Math.min(100,this.comfort+18); this.spark(CX,GAME_TOP+132,C.gold); this.showGuide('Golden Loop! The schedule pauses and the handoff smooths out.',2);
+    if(this.pendingBag) this.tapBag();
+    if(this.cloud){ this.cloud.setTintFill(0xffefb0); this.time.delayedCall(220,()=>this.cloud.clearTint()); }
+  }
+  finishLevel(){ this.done=true; this.time.delayedCall(450,()=>{ if(this.levelIndex===LEVELS.length-1) this.scene.start('end',{score:this.score}); else this.scene.start('fact',{level:this.levelIndex,next:this.levelIndex+1,score:this.score,comfort:this.comfort,tangles:this.tangles,fact:this.level.fact,fail:false}); }); }
+  failLevel(){ this.done=true; this.scene.start('fact',{level:this.levelIndex,score:this.score,comfort:this.comfort,tangles:this.tangles,fail:true}); }
+  spark(x,y,color){ const s=this.add.image(x,y,'uiSpark').setTint(color).setScale(0.8).setDepth(30); this.tweens.add({targets:s,scale:2.8,alpha:0,duration:240,onComplete:()=>s.destroy()}); }
+  updateHud(){
+    this.topBadge.list[1].setText(`Stars ${this.score}   Comfort ${roundNum(this.comfort)}%   Tangles ${this.tangles}${this.level.loop?`   Golden Loop ${roundNum(this.loop)}%`:''}`);
+    this.barG.clear();
+    this.barG.fillStyle(0x1c1432).fillRoundedRect(12,62,516,14,7); this.barG.fillStyle(C.green).fillRoundedRect(14,64,Math.max(6,512*this.comfort/100),10,6);
+    this.barG.fillStyle(0x1c1432).fillRoundedRect(12,80,516,14,7); this.barG.fillStyle(C.gold).fillRoundedRect(14,82,Math.max(0,512*(this.progress/this.level.target.length)),10,6);
+    if(this.level.loop){ this.barG.fillStyle(0x1c1432).fillRoundedRect(12,98,516,14,7); this.barG.fillStyle(C.purple).fillRoundedRect(14,100,Math.max(0,512*this.loop/100),10,6); }
+    if(!this.guideBadge) this.guideBadge=addBadge(this,CX,788,'',C.gold,'#161027',430,22,'bold 18px "Trebuchet MS"');
+    this.guideBadge.list[1].setText(this.guideTimer>0?this.guideText:(this.level.bag?'Drag the next planner tile, then tap Bag Check if it glows.':'Drag the next planner tile into place.'));
+  }
+  updateScene(time,dt){
+    animateBg(this,time);
+    this.hero.y=GAME_TOP+192+Math.sin(time*0.008)*5;
+    this.train.x=270+Math.sin(time*0.0027)*20;
+    this.kid.y=GAME_TOP+208+Math.cos(time*0.004)*6;
+    if(this.cloud){ this.cloud.x=270+Math.sin(time*0.0035)*24; this.cloud.y=GAME_TOP+108+Math.cos(time*0.0045)*8; }
+  }
+  update(time,delta){
+    this.updateScene(time,delta/1000);
+    if(this.done) return;
+    if(this.paused){ this.updateHud(); return; }
+    const dt=delta/1000;
+    if(this.guideTimer>0) this.guideTimer-=dt;
+    this.comfort=Math.max(0,this.comfort-this.level.drain*dt);
+    if(this.pendingBag){ this.pendingBag.life-=dt; if(this.pendingBag.life<=0){ this.clearBag(); this.comfort=Math.max(0,this.comfort-10); this.tangles++; this.showGuide('The bag mix-up slowed everything down!',1.8); } }
+    if(this.level.loop && this.progress>=2 && Math.floor(time/4500)!==Math.floor((time-delta)/4500)){ this.comfort=Math.max(0,this.comfort-7); this.tangles++; this.showGuide('A Stress Cloud drifted in. Golden Loop can help!',1.8); }
+    this.updateHud();
+    if(this.comfort<=0) this.failLevel();
+  }
+}
+
+new Phaser.Game({type:Phaser.AUTO,width:W,height:H,pixelArt:true,backgroundColor:'#1E1B2E',scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH,parent:document.body},scene:[Boot,Legend,Play,Fact,End],input:{activePointers:3},render:{pixelArt:true,roundPixels:true,antialias:false}});
+</script>
+</body>
+</html>
