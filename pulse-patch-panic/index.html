@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Pulse Patch Panic</title>
+<style>
+  html,body{margin:0;height:100%;background:#170f29;overflow:hidden;font-family:"Trebuchet MS",Verdana,Arial,sans-serif}
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{image-rendering:pixelated;image-rendering:crisp-edges;touch-action:none}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
+</head>
+<body>
+<script>
+const W=540,H=960,HUD_H=60,CTRL_H=120,GAME_TOP=HUD_H,GAME_BOTTOM=H-CTRL_H,GAME_H=GAME_BOTTOM-GAME_TOP,CX=W/2;
+const C={panel:0x3b245d,panel2:0x5e3a83,ink:0x160d27,white:0xF7F4EA,pink:0xE94F64,gold:0xFFCF56,mint:0x43D9C4,blue:0x4D7CFE,purple:0x7B4BB7,peach:0xFFA27E,lime:0x99E263,darkRed:0x7f2238};
+const REAL_STORY='The real story behind this game is a promising therapy called Lyfgenia, which uses a patient’s own bone marrow to help the body produce healthy red blood cells. For people living with sickle cell anemia, that breakthrough may mean fewer painful crises and a better future. Real scientists, doctors, and patients are making that hope possible.';
+const REAL_CTA='Celebrate medical breakthroughs and the people behind them — every new treatment can change a life.';
+const FUN_FACTS=[
+  'Real scientists are finding new ways to help the body make healthier red blood cells.',
+  'For people with sickle cell anemia, better blood flow could mean fewer painful crises and more good days.'
+];
+const LEVELS=[
+  {
+    name:'First Infusion',
+    rule:'Tap Grump Blobs. That is all!',
+    cheerStart:76, cheerDrain:3.0, spawnMs:860, goal:14, theme:'sun',
+    nodes:[
+      {id:'src',x:88,y:180,type:'source',outs:['a']},
+      {id:'a',x:188,y:180,type:'auto',outs:['b','c']},
+      {id:'b',x:300,y:130,type:'auto',outs:['d','e']},
+      {id:'c',x:300,y:340,type:'auto',outs:['e','f']},
+      {id:'d',x:448,y:120,type:'sink'},
+      {id:'e',x:454,y:280,type:'sink'},
+      {id:'f',x:448,y:470,type:'sink'}
+    ],
+    hazards:[
+      {id:'h1',x:244,y:156,edge:['a','b'],hp:2,max:2,regen:0.12},
+      {id:'h2',x:244,y:260,edge:['a','c'],hp:2,max:2,regen:0.12},
+      {id:'h3',x:378,y:400,edge:['c','f'],hp:3,max:3,regen:0.10}
+    ],
+    collapses:[], boss:null
+  },
+  {
+    name:'Bone Marrow Circuit',
+    rule:'Tap Grump Blobs and drag Turn Bubbles.',
+    cheerStart:74, cheerDrain:4.1, spawnMs:740, goal:24, theme:'candy',
+    nodes:[
+      {id:'src',x:80,y:220,type:'source',outs:['a']},
+      {id:'a',x:166,y:220,type:'turn',outs:['b','c'],route:0},
+      {id:'b',x:252,y:140,type:'turn',outs:['v1','d'],route:0},
+      {id:'c',x:252,y:410,type:'turn',outs:['d','v2'],route:0},
+      {id:'d',x:346,y:270,type:'turn',outs:['e','f'],route:0},
+      {id:'v1',x:354,y:96,type:'valve',outs:['g','d'],route:0,period:2.6,tick:0},
+      {id:'v2',x:356,y:560,type:'valve',outs:['f','h'],route:0,period:2.9,tick:0},
+      {id:'g',x:456,y:110,type:'sink'},
+      {id:'e',x:460,y:226,type:'sink'},
+      {id:'f',x:460,y:386,type:'sink'},
+      {id:'h',x:456,y:610,type:'sink'}
+    ],
+    hazards:[
+      {id:'h1',x:210,y:184,edge:['a','b'],hp:2,max:2,regen:0.18},
+      {id:'h2',x:210,y:320,edge:['a','c'],hp:3,max:3,regen:0.18},
+      {id:'h3',x:300,y:216,edge:['b','d'],hp:2,max:2,regen:0.16},
+      {id:'h4',x:300,y:346,edge:['c','d'],hp:2,max:2,regen:0.16},
+      {id:'h5',x:404,y:330,edge:['d','f'],hp:3,max:3,regen:0.15}
+    ],
+    collapses:[
+      {id:'c1',edge:['b','v1'],open:true,openFor:2500,closedFor:1500,timer:0},
+      {id:'c2',edge:['c','v2'],open:true,openFor:2600,closedFor:1700,timer:0}
+    ], boss:null
+  },
+  {
+    name:'Crimson Cascade',
+    rule:'Tap, drag, then use Rainbow Rush for the big finish.',
+    cheerStart:78, cheerDrain:4.7, spawnMs:690, goal:0, theme:'storm',
+    nodes:[
+      {id:'src',x:78,y:210,type:'source',outs:['a']},
+      {id:'a',x:158,y:210,type:'turn',outs:['b','c'],route:0},
+      {id:'b',x:236,y:130,type:'turn',outs:['d','e'],route:0},
+      {id:'c',x:236,y:420,type:'turn',outs:['e','f'],route:0},
+      {id:'d',x:332,y:100,type:'turn',outs:['s1','e'],route:0},
+      {id:'e',x:332,y:280,type:'turn',outs:['s2'],route:0},
+      {id:'f',x:336,y:590,type:'valve',outs:['e','s3'],route:0,period:2.2,tick:0},
+      {id:'s1',x:454,y:96,type:'sink'},
+      {id:'s2',x:462,y:278,type:'sink'},
+      {id:'s3',x:454,y:644,type:'sink'}
+    ],
+    hazards:[
+      {id:'h1',x:202,y:166,edge:['a','b'],hp:3,max:3,regen:0.22},
+      {id:'h2',x:202,y:324,edge:['a','c'],hp:3,max:3,regen:0.22},
+      {id:'h3',x:286,y:204,edge:['b','e'],hp:3,max:3,regen:0.20},
+      {id:'h4',x:286,y:352,edge:['c','e'],hp:3,max:3,regen:0.20},
+      {id:'h5',x:332,y:190,edge:['d','e'],hp:2,max:2,regen:0.16},
+      {id:'h6',x:394,y:620,edge:['f','s3'],hp:4,max:4,regen:0.14}
+    ],
+    collapses:[
+      {id:'c1',edge:['d','s1'],open:true,openFor:2100,closedFor:1800,timer:0},
+      {id:'c2',edge:['c','f'],open:true,openFor:2500,closedFor:1700,timer:0}
+    ],
+    boss:{x:272,y:480,hp:4,max:4,charge:0,shieldGoal:5,vulnerable:false,vulnTimer:0,stormTimer:0,stormEvery:4.8}
+  }
+];
+
+function clone(v){ return JSON.parse(JSON.stringify(v)); }
+function roundNum(n){ return Math.max(0,Math.round(n)); }
+function edgeMatch(edge,a,b){ return (edge[0]===a&&edge[1]===b)||(edge[0]===b&&edge[1]===a); }
+function animateFloaters(scene,t){ if(scene.bgFloaters) scene.bgFloaters.forEach((f,i)=>{ f.x=f.baseX+Math.sin(t*0.00045+f.seed)*(i%2?8:5); f.y=f.baseY+Math.cos(t*0.00055+f.seed)*(i%2?6:4); }); }
+function labelY(y,size=34){ const below=y+size+34, above=y-size-34; return below<=GAME_BOTTOM-26?below:Math.max(GAME_TOP+26,above); }
+function addBadge(scene,x,y,text,fill=C.panel,textColor='#F7F4EA',width=null,depth=10,font='bold 16px "Trebuchet MS"'){
+  const t=scene.add.text(0,0,text,{font,fill:textColor,align:'center',wordWrap:width?{width:width-24}:undefined,lineSpacing:4}).setOrigin(0.5);
+  const w=width||Math.max(74,t.width+24), h=Math.max(30,t.height+14);
+  const g=scene.add.graphics();
+  g.fillStyle(fill,1).lineStyle(3,C.white,0.95).fillRoundedRect(-w/2,-h/2,w,h,12).strokeRoundedRect(-w/2,-h/2,w,h,12);
+  const c=scene.add.container(x,y,[g,t]).setDepth(depth);
+  return {container:c,bg:g,text:t,width:w,height:h};
+}
+function addButton(scene,x,y,w,h,text,fill,textColor,font='bold 26px "Trebuchet MS"'){
+  const r=scene.add.rectangle(x,y,w,h,fill).setStrokeStyle(5,C.white).setInteractive();
+  const t=scene.add.text(x,y,text,{font,fill:textColor}).setOrigin(0.5);
+  scene.tweens.add({targets:r,scaleX:1.04,scaleY:1.04,duration:760,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+  return {rect:r,text:t};
+}
+function makePrimitiveTextures(scene){
+  if(scene.textures.exists('heroPx')) return;
+  const g=scene.make.graphics({x:0,y:0,add:false});
+
+  g.clear();
+  g.fillStyle(C.pink).fillRect(12,26,24,16);
+  g.fillStyle(C.white).fillRect(16,8,16,14);
+  g.fillStyle(C.peach).fillRect(18,16,12,10);
+  g.fillStyle(C.mint).fillRect(14,12,20,6);
+  g.fillStyle(C.gold).fillRect(34,28,6,10);
+  g.fillStyle(C.ink).fillRect(21,18,2,2).fillRect(27,18,2,2).fillRect(22,22,6,2);
+  g.lineStyle(2,C.white).strokeRect(12,26,24,16).strokeRect(16,8,16,14);
+  g.generateTexture('heroPx',48,48); g.clear();
+
+  g.fillStyle(C.pink).fillRect(6,10,20,12);
+  g.fillStyle(C.white).fillRect(10,12,4,4).fillRect(18,12,4,4).fillRect(10,18,12,2);
+  g.fillStyle(C.mint).fillRect(24,8,4,4);
+  g.generateTexture('dronePx',32,32); g.clear();
+
+  g.fillStyle(C.pink).fillRect(6,6,12,12);
+  g.fillStyle(C.white).fillRect(8,8,2,2).fillRect(14,8,2,2).fillRect(9,13,6,2);
+  g.generateTexture('dropPx',24,24); g.clear();
+
+  g.fillStyle(C.blue).fillRect(10,10,36,36);
+  g.fillStyle(C.white).fillRect(16,16,8,8).fillRect(32,16,8,8).fillRect(20,32,16,4);
+  g.fillStyle(C.gold).fillRect(24,4,8,8).fillRect(24,44,8,8);
+  g.lineStyle(3,C.white).strokeRect(10,10,36,36);
+  g.generateTexture('turnPx',56,56); g.clear();
+
+  g.fillStyle(C.gold).fillRect(22,4,12,48).fillRect(4,22,48,12).fillRect(12,12,32,32);
+  g.fillStyle(C.white).fillRect(16,18,8,8).fillRect(32,18,8,8);
+  g.fillStyle(C.ink).fillRect(18,20,4,4).fillRect(34,20,4,4).fillRect(20,32,16,4);
+  g.lineStyle(3,C.white).strokeRect(12,12,32,32);
+  g.generateTexture('homePx',56,56); g.clear();
+
+  g.fillStyle(C.purple).fillRect(10,10,36,36);
+  g.fillStyle(C.gold).fillRect(24,4,8,48).fillRect(4,24,48,8);
+  g.fillStyle(C.white).fillRect(18,18,6,6).fillRect(32,18,6,6);
+  g.fillStyle(C.ink).fillRect(20,20,2,2).fillRect(34,20,2,2);
+  g.lineStyle(3,C.white).strokeRect(10,10,36,36);
+  g.generateTexture('valvePx',56,56); g.clear();
+
+  g.fillStyle(C.pink).fillRect(8,4,12,8).fillRect(24,4,12,8).fillRect(40,8,8,12).fillRect(4,8,8,12).fillRect(8,16,36,24).fillRect(12,40,28,8);
+  g.fillStyle(C.white).fillRect(16,18,8,8).fillRect(32,18,8,8);
+  g.fillStyle(C.ink).fillRect(18,20,4,4).fillRect(34,20,4,4).fillRect(18,34,20,4);
+  g.lineStyle(3,C.darkRed).strokeRect(8,16,36,24);
+  g.generateTexture('blobPx',56,56); g.clear();
+
+  g.fillStyle(C.purple).fillRect(10,18,76,28).fillRect(18,10,60,44).fillStyle(C.pink).fillRect(40,22,16,16);
+  g.fillStyle(C.white).fillRect(28,24,8,8).fillRect(60,24,8,8);
+  g.fillStyle(C.ink).fillRect(30,26,4,4).fillRect(62,26,4,4).fillRect(30,42,36,4);
+  g.lineStyle(3,C.white).strokeRect(18,10,60,44);
+  g.generateTexture('bossPx',96,64); g.clear();
+
+  g.fillStyle(C.gold).fillTriangle(10,12,28,2,28,22); g.fillStyle(C.white).fillRect(0,9,16,6); g.generateTexture('uiArrow',30,24); g.clear();
+  g.fillStyle(C.peach).fillRect(16,4,14,16).fillRect(8,18,24,20).fillRect(32,12,8,18); g.fillStyle(C.white).fillRect(18,12,3,3).fillRect(25,12,3,3); g.fillStyle(C.pink).fillRect(20,18,8,2); g.generateTexture('uiHand',52,44); g.clear();
+  g.fillStyle(C.white).fillRect(6,6,12,12); g.fillStyle(C.gold).fillRect(8,8,8,8); g.generateTexture('uiSpark',24,24); g.clear();
+  g.fillStyle(C.mint).fillRect(4,4,16,16); g.fillStyle(C.white).fillRect(7,7,3,3).fillRect(14,7,3,3).fillStyle(C.ink).fillRect(8,14,8,2); g.generateTexture('uiCursor',24,24); g.destroy();
+}
+function pxSprite(scene,key,x,y,w,h,depth=5){ return scene.add.image(x,y,key).setDisplaySize(w,h).setDepth(depth); }
+function drawFrame(scene,theme){
+  const top=theme==='storm'?0x2e1434:theme==='candy'?0x1f2654:0x22244d;
+  const mid=theme==='storm'?0x521d49:theme==='candy'?0x2f4d7e:0x316180;
+  const low=theme==='storm'?0x712547:theme==='candy'?0x54358a:0x4b367f;
+  scene.add.rectangle(CX,H/2,W,H,top);
+  scene.add.rectangle(CX,HUD_H/2,W,HUD_H,C.panel);
+  scene.add.rectangle(CX,H-CTRL_H/2,W,CTRL_H,C.panel);
+  scene.add.rectangle(CX,HUD_H+GAME_H/2,W,GAME_H,mid);
+  if(scene.textures.exists('bgMain')){
+    scene.add.image(CX,HUD_H+GAME_H/2,'bgMain').setDisplaySize(W-12,GAME_H-12).setAlpha(0.33).setDepth(0);
+    scene.add.image(CX+10,HUD_H+GAME_H/2+8,'bgMain').setDisplaySize(W-36,GAME_H-42).setTint(theme==='storm'?0xff88aa:theme==='candy'?0xaad7ff:0xffefaa).setAlpha(0.18).setDepth(0);
+  }
+  scene.add.rectangle(CX,HUD_H+GAME_H/2,W-16,GAME_H-16,C.panel2,0.38).setStrokeStyle(4,C.white,0.35).setDepth(1);
+  scene.bgFloaters=[];
+  const tints=theme==='storm'?[C.pink,C.purple,C.peach]:theme==='candy'?[C.gold,C.blue,C.mint]:[C.mint,C.peach,C.gold];
+  for(let i=0;i<12;i++){
+    const f=pxSprite(scene,'homePx',46+(i*43)%W,96+(i*69)%H,24+(i%3)*8,24+(i%3)*8,1).setTint(tints[i%3]).setAlpha(0.12);
+    f.baseX=f.x; f.baseY=f.y; f.seed=i*0.8; scene.bgFloaters.push(f);
+  }
+  for(let i=0;i<16;i++){
+    const s=scene.add.image(20+(i*29)%W,104+(i*53)%H,'uiSpark').setScale(0.4+(i%3)*0.18).setAlpha(0.18).setDepth(1);
+    s.baseX=s.x; s.baseY=s.y; s.seed=12+i*0.45; scene.bgFloaters.push(s);
+  }
+}
+
+class BootScene extends Phaser.Scene{
+  constructor(){ super('boot'); }
+  preload(){
+    this.add.rectangle(CX,H/2,W,H,0x170f29);
+    this.add.text(CX,390,'LOADING CARTOON RESCUE',{font:'bold 28px "Trebuchet MS"',fill:'#F7F4EA'}).setOrigin(0.5);
+    this.add.rectangle(CX,460,340,28,0x2a1b45).setStrokeStyle(4,C.white);
+    const bar=this.add.rectangle(CX-166,460,0,20,C.gold).setOrigin(0,0.5);
+    this.load.on('progress',v=>bar.width=332*v);
+    this.load.image('bgMain','assets/bg-main.png');
+  }
+  create(){
+    makePrimitiveTextures(this);
+    this.scene.start('title');
+  }
+}
+
+class TitleScene extends Phaser.Scene{
+  constructor(){ super('title'); }
+  create(){
+    drawFrame(this,'sun');
+    pxSprite(this,'heroPx',36,30,38,38,20);
+    pxSprite(this,'dronePx',72,20,24,24,20);
+    addBadge(this,CX,30,'PULSE PATCH PANIC',C.panel2,'#F7F4EA',260,20,'bold 24px "Trebuchet MS"');
+    const panelW=472,panelH=646,panelX=CX,panelY=GAME_TOP+GAME_H/2-6;
+    this.add.graphics().fillStyle(C.panel,0.96).lineStyle(4,C.white,0.95).fillRoundedRect(panelX-panelW/2,panelY-panelH/2,panelW,panelH,28).strokeRoundedRect(panelX-panelW/2,panelY-panelH/2,panelW,panelH,28);
+    addBadge(this,panelX,panelY-panelH/2+32,'LOOK WHO IS HERE',C.mint,'#1a1030',240,6,'bold 22px "Trebuchet MS"');
+    const hero=pxSprite(this,'heroPx',panelX-166,panelY-panelH/2+98,116,116,7);
+    const drone=pxSprite(this,'dronePx',panelX-120,panelY-panelH/2+74,42,42,8);
+    this.tweens.add({targets:[hero,drone],y:'+=7',duration:850,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    this.add.text(panelX-28,panelY-panelH/2+72,'Dr. Lya Pulse helps the tiny Smile Drops find safe paths home.',{font:'20px "Trebuchet MS"',fill:'#F7F4EA',wordWrap:{width:260},lineSpacing:8});
+    const items=[
+      {x:panelX-116,y:panelY-72,key:'dropPx',name:'Smile Drop',fact:'A tiny hero that loves bright safe paths.'},
+      {x:panelX+116,y:panelY-72,key:'blobPx',name:'Grump Blob',fact:'Tap it to pop it before it blocks the way.'},
+      {x:panelX-116,y:panelY+116,key:'turnPx',name:'Turn Bubble',fact:'In Level 2, drag it to point the path.'},
+      {x:panelX+116,y:panelY+116,key:'homePx',name:'Glow Home',fact:'When a Smile Drop lands here, the map cheers.'}
+    ];
+    items.forEach((it,i)=>{
+      this.add.graphics().fillStyle(0x2c1847,0.96).lineStyle(3,C.white,0.9).fillRoundedRect(it.x-92,it.y-62,184,124,20).strokeRoundedRect(it.x-92,it.y-62,184,124,20);
+      const img=pxSprite(this,it.key,it.x,it.y-14,it.key==='blobPx'?74:66,it.key==='blobPx'?74:66,8);
+      this.tweens.add({targets:img,scaleX:1.08,scaleY:1.08,duration:700+90*i,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+      addBadge(this,it.x,it.y+28,it.name,C.gold,'#1a1030',124,9,'bold 18px "Trebuchet MS"');
+      this.add.text(it.x,it.y+78,it.fact,{font:'16px "Trebuchet MS"',fill:'#F7F4EA',align:'center',wordWrap:{width:156},lineSpacing:4}).setOrigin(0.5);
+    });
+    addBadge(this,CX,868,'Level 1 has just one action: tap Grump Blobs.',C.gold,'#1a1030',360,20,'bold 18px "Trebuchet MS"');
+    const start=addButton(this,CX,920,300,64,'START THE RESCUE',C.gold,'#1a1030','bold 24px "Trebuchet MS"');
+    start.rect.on('pointerdown',()=>this.scene.start('play',{levelIndex:0}));
+    this.input.keyboard.on('keydown-SPACE',()=>this.scene.start('play',{levelIndex:0}));
+  }
+  update(t){ animateFloaters(this,t); }
+}
+
+class CardScene extends Phaser.Scene{
+  constructor(){ super('card'); }
+  init(data){ this.info=data; }
+  create(){
+    drawFrame(this,this.info.mode==='fail'?'storm':(this.info.nextIndex===2?'candy':'sun'));
+    pxSprite(this,'heroPx',36,30,38,38,20); pxSprite(this,'dronePx',72,20,24,24,20);
+    addBadge(this,CX,30,this.info.mode==='fail'?'TRY AGAIN':'LEVEL CLEAR',this.info.mode==='fail'?C.pink:C.mint,this.info.mode==='fail'?'#F7F4EA':'#1a1030',220,20,'bold 22px "Trebuchet MS"');
+    const pW=460,pH=520,pX=CX,pY=GAME_TOP+GAME_H/2;
+    this.add.graphics().fillStyle(C.panel,0.96).lineStyle(4,C.white,0.95).fillRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28).strokeRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28);
+    if(this.info.mode==='fail'){
+      pxSprite(this,'blobPx',CX,pY-124,140,140,8);
+      addBadge(this,CX,pY-34,'The sparkle faded!',C.pink,'#F7F4EA',240,8,'bold 24px "Trebuchet MS"');
+      this.add.text(CX,pY+36,'Pop the Grump Blobs sooner, keep the Smile Drops moving, and try again right away.',{font:'20px "Trebuchet MS"',fill:'#F7F4EA',align:'center',wordWrap:{width:380},lineSpacing:8}).setOrigin(0.5);
+    }else{
+      pxSprite(this,'homePx',CX,pY-124,128,128,8);
+      addBadge(this,CX,pY-36,'Fun fact card',C.mint,'#1a1030',180,8,'bold 24px "Trebuchet MS"');
+      this.add.text(CX,pY+8,FUN_FACTS[Math.min(this.info.levelIndex,FUN_FACTS.length-1)],{font:'20px "Trebuchet MS"',fill:'#F7F4EA',align:'center',wordWrap:{width:388},lineSpacing:8}).setOrigin(0.5);
+      addBadge(this,CX,pY+126,`Next: ${LEVELS[this.info.nextIndex].name}`,C.gold,'#1a1030',250,8,'bold 20px "Trebuchet MS"');
+      this.add.text(CX,pY+184,LEVELS[this.info.nextIndex].rule,{font:'18px "Trebuchet MS"',fill:'#F7F4EA',align:'center',wordWrap:{width:360}}).setOrigin(0.5);
+    }
+    addBadge(this,CX,870,`Smile Drops saved: ${this.info.saved}   Cheer left: ${roundNum(this.info.cheer)}%`,C.panel2,'#F7F4EA',350,20,'bold 18px "Trebuchet MS"');
+    const main=addButton(this,CX,920,280,64,this.info.mode==='fail'?'TRY AGAIN':'NEXT LEVEL',this.info.mode==='fail'?C.pink:C.gold,this.info.mode==='fail'?'#F7F4EA':'#1a1030','bold 24px "Trebuchet MS"');
+    main.rect.on('pointerdown',()=>this.scene.start('play',{levelIndex:this.info.mode==='fail'?this.info.levelIndex:this.info.nextIndex}));
+    this.input.keyboard.on('keydown-SPACE',()=>this.scene.start('play',{levelIndex:this.info.mode==='fail'?this.info.levelIndex:this.info.nextIndex}));
+  }
+  update(t){ animateFloaters(this,t); }
+}
+
+class EndScene extends Phaser.Scene{
+  constructor(){ super('end'); }
+  create(){
+    drawFrame(this,'storm');
+    pxSprite(this,'heroPx',36,30,38,38,20); pxSprite(this,'dronePx',72,20,24,24,20);
+    addBadge(this,CX,30,'YOU SAVED THE DAY',C.mint,'#1a1030',220,20,'bold 22px "Trebuchet MS"');
+    const pW=472,pH=650,pX=CX,pY=GAME_TOP+GAME_H/2-6;
+    this.add.graphics().fillStyle(C.panel,0.96).lineStyle(4,C.white,0.95).fillRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28).strokeRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28);
+    pxSprite(this,'heroPx',CX,pY-pH/2+86,118,118,8);
+    pxSprite(this,'dronePx',CX+48,pY-pH/2+58,42,42,9);
+    addBadge(this,CX,pY-pH/2+164,'The real good-news story',C.gold,'#1a1030',260,8,'bold 22px "Trebuchet MS"');
+    this.add.text(CX,pY-pH/2+214,'This game is based on real hope. A treatment called Lyfgenia uses special starter cells from a person’s own body to help make healthier red blood cells. For people living with sickle cell anemia, that could mean fewer painful crises and a brighter future. Real scientists, doctors, and patients helped make that hope possible.',{font:'18px "Trebuchet MS"',fill:'#F7F4EA',align:'center',wordWrap:{width:404},lineSpacing:7}).setOrigin(0.5,0);
+    addBadge(this,CX,pY+90,'Exact text from the brief',C.mint,'#1a1030',240,8,'bold 18px "Trebuchet MS"');
+    this.add.text(CX,pY+122,REAL_STORY,{font:'16px "Trebuchet MS"',fill:'#F7F4EA',align:'center',wordWrap:{width:412},lineSpacing:6}).setOrigin(0.5,0);
+    this.add.text(CX,pY+230,REAL_CTA,{font:'bold 18px "Trebuchet MS"',fill:'#FFCF56',align:'center',wordWrap:{width:412},lineSpacing:6}).setOrigin(0.5,0);
+    const again=addButton(this,CX,920,260,64,'PLAY AGAIN',C.gold,'#1a1030','bold 24px "Trebuchet MS"');
+    again.rect.on('pointerdown',()=>this.scene.start('play',{levelIndex:0}));
+    this.input.keyboard.on('keydown-SPACE',()=>this.scene.start('play',{levelIndex:0}));
+  }
+  update(t){ animateFloaters(this,t); }
+}
+
+class PlayScene extends Phaser.Scene{
+  constructor(){ super('play'); }
+  init(data){ this.levelIndex=data.levelIndex||0; }
+  create(){
+    this.level=clone(LEVELS[this.levelIndex]);
+    this.allowDrag=this.levelIndex>=1;
+    this.allowRush=this.levelIndex>=2;
+    this.isTouch=!!this.sys.game.device.input.touch;
+    this.useKeyboardCursor=!this.isTouch&&this.levelIndex>=1;
+    this.cheer=this.level.cheerStart; this.saved=0; this.rush=0; this.rushTime=0; this.spawnClock=0; this.regenClock=0; this.pausedGame=false; this.pauseLatch=false; this.flowHold=false; this.flowPointerId=null;
+    this.cells=[]; this.map={}; this.curves={}; this.routeSprites=[]; this.hazardSprites=[]; this.hazardBadges={}; this.dragNode=null; this.hintSprites=[];
+    this.cursor={x:110,y:GAME_BOTTOM-50,vx:0,vy:0};
+    this.level.nodes.forEach(n=>this.map[n.id]=n);
+    drawFrame(this,this.level.theme);
+    this.makeHud(); this.makeWorld(); this.makeControls(); this.bindInput(); this.buildCurves(); this.redrawMap(); this.startGuide();
+  }
+  makeHud(){
+    pxSprite(this,'heroPx',36,30,38,38,20); pxSprite(this,'dronePx',72,20,24,24,20);
+    this.levelBadge=addBadge(this,CX,18,`Level ${this.levelIndex+1}: ${this.level.name}`,C.panel2,'#F7F4EA',270,20,'bold 18px "Trebuchet MS"');
+    this.statusBadge=addBadge(this,CX,44,'',C.panel,'#F7F4EA',370,20,'bold 16px "Trebuchet MS"');
+    this.pauseText=this.add.text(CX,GAME_TOP+GAME_H/2,'PAUSED',{font:'bold 46px "Trebuchet MS"',fill:'#FFCF56'}).setOrigin(0.5).setDepth(40).setVisible(false);
+  }
+  makeWorld(){
+    this.mapG=this.add.graphics().setDepth(2); this.fxG=this.add.graphics().setDepth(3);
+    this.level.nodes.forEach((n,i)=>{
+      let s;
+      if(n.type==='source') s=pxSprite(this,'heroPx',n.x,n.y,70,70,5);
+      else if(n.type==='sink') s=pxSprite(this,'homePx',n.x,n.y,64,64,5);
+      else if(n.type==='valve') s=pxSprite(this,'valvePx',n.x,n.y,62,62,5);
+      else s=pxSprite(this,'turnPx',n.x,n.y,62,62,5);
+      s.node=n;
+      this.tweens.add({targets:s,scaleX:1.05,scaleY:1.05,duration:720+70*i,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+      if(n.type==='turn'&&this.allowDrag){ s.setInteractive(new Phaser.Geom.Circle(0,0,42),Phaser.Geom.Circle.Contains); this.routeSprites.push(s); }
+      const label=n.type==='source'?'START':n.type==='sink'?'HOME':n.type==='valve'?'SPIN':'TURN';
+      addBadge(this,n.x,labelY(n.y,34),label,n.type==='sink'?C.gold:(n.type==='source'?C.pink:(n.type==='valve'?C.purple:C.blue)),n.type==='sink'?'#1a1030':'#F7F4EA',88,7,'bold 16px "Trebuchet MS"');
+      if(n.type==='valve') this.tweens.add({targets:s,angle:360,duration:2600,repeat:-1,ease:'Linear'});
+    });
+    this.level.hazards.forEach((h,i)=>{
+      const c=this.add.container(h.x,h.y,[pxSprite(this,'blobPx',0,0,70,70,0)]).setDepth(6).setSize(88,88).setInteractive(new Phaser.Geom.Circle(0,0,40),Phaser.Geom.Circle.Contains);
+      c.hazard=h; this.hazardSprites.push(c);
+      this.tweens.add({targets:c,angle:4,duration:240+40*i,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+      this.hazardBadges[h.id]=addBadge(this,h.x,labelY(h.y,40),'GRUMP',C.pink,'#F7F4EA',96,7,'bold 16px "Trebuchet MS"');
+    });
+    if(this.level.boss){
+      const b=this.level.boss;
+      this.bossSprite=pxSprite(this,'bossPx',b.x,b.y,144,108,8);
+      this.tweens.add({targets:this.bossSprite,scaleX:1.04,scaleY:1.04,duration:800,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+      this.bossLabel=addBadge(this,b.x,labelY(b.y,54),'STORM',C.purple,'#F7F4EA',102,7,'bold 16px "Trebuchet MS"');
+    }
+    if(this.useKeyboardCursor){
+      this.cursorSprite=this.add.image(this.cursor.x,this.cursor.y,'uiCursor').setScale(1.2).setDepth(12);
+      this.cursorLabel=addBadge(this,this.cursor.x,this.cursor.y-28,'KEY',C.mint,'#1a1030',70,12,'bold 16px "Trebuchet MS"');
+    }
+  }
+  makeControls(){
+    if(this.isTouch){
+      const guide=this.add.circle(110,918,42,0x000000,0.18).setStrokeStyle(4,C.mint,0.9).setDepth(20).setInteractive();
+      this.touchGuideLabel=addBadge(this,110,918,this.allowDrag?'DRAG':'TAP',C.mint,'#1a1030',86,21,'bold 18px "Trebuchet MS"');
+      guide.on('pointerdown',()=>this.showBottom(this.level.rule,1.8));
+      this.popBtn=addButton(this,this.allowRush?370:430,918,110,64,'POP',C.gold,'#1a1030','bold 24px "Trebuchet MS"');
+      this.popBtn.rect.on('pointerdown',()=>this.popNearestTouch());
+      if(this.allowRush){
+        this.rushBtn=addButton(this,472,918,110,64,'RUSH',C.purple,'#F7F4EA','bold 24px "Trebuchet MS"');
+        this.rushBtn.rect.on('pointerdown',pointer=>{ if(this.pausedGame) return; this.flowHold=true; this.flowPointerId=pointer.id; this.showBottom('Hold for a full Rainbow Rush, then let go!',1.5); });
+      }
+    }
+    this.bottomBadge=addBadge(this,CX,870,this.level.rule,C.gold,'#1a1030',420,20,'bold 18px "Trebuchet MS"');
+  }
+  bindInput(){
+    this.keys=this.input.keyboard.createCursorKeys();
+    this.wasd=this.input.keyboard.addKeys('W,A,S,D,SPACE,SHIFT,ENTER,P');
+    this.input.on('pointerdown',pointer=>{
+      if(this.input.pointer1.isDown&&this.input.pointer2.isDown&&!this.pauseLatch){ this.pauseLatch=true; this.togglePause(); }
+      if(this.pausedGame) return;
+      if(this.allowDrag){
+        const target=this.routeSprites.find(s=>Phaser.Math.Distance.Between(pointer.x,pointer.y,s.x,s.y)<42);
+        if(target) this.dragNode={node:target.node,startX:pointer.x,startY:pointer.y};
+      }
+    });
+    this.input.on('pointerup',pointer=>{
+      if(this.dragNode){
+        const d=Phaser.Math.Distance.Between(this.dragNode.startX,this.dragNode.startY,pointer.x,pointer.y);
+        if(d<18) this.dragNode.node.route=(this.dragNode.node.route+1)%this.dragNode.node.outs.length;
+        else this.dragNode.node.route=this.bestOut(this.dragNode.node,pointer.x,pointer.y);
+        this.dragNode=null; this.spark(pointer.x,pointer.y,C.gold); this.redrawMap(); this.showBottom('Turn Bubble moved!',1.2);
+      }
+      if(this.flowPointerId===pointer.id) this.releaseRush();
+      if(!this.input.pointer1.isDown&&!this.input.pointer2.isDown) this.pauseLatch=false;
+    });
+    this.hazardSprites.forEach(s=>s.on('pointerdown',()=>this.popHazard(s.hazard,true)));
+    this.input.keyboard.on('keydown-P',()=>this.togglePause());
+    this.input.keyboard.on('keydown-SPACE',()=>{ if(this.useKeyboardCursor) this.popNearestByCursor(); else if(!this.isTouch) this.popGlobalNearest(); });
+    this.input.keyboard.on('keydown-ENTER',()=>{ if(this.useKeyboardCursor&&this.allowDrag) this.flipNearestTurn(); });
+    this.input.keyboard.on('keyup-SHIFT',()=>{ if(this.allowRush) this.releaseRush(); });
+  }
+  buildCurves(){
+    this.level.nodes.forEach(n=>{
+      if(!n.outs) return;
+      n.outs.forEach(id=>{
+        const key=[n.id,id].sort().join('~'); if(this.curves[key]) return;
+        const a=this.map[n.id],b=this.map[id],dx=b.x-a.x,dy=b.y-a.y,dist=Math.max(1,Math.hypot(dx,dy)),nx=-dy/dist,ny=dx/dist;
+        const bend=(((a.x+b.y+b.x)%2)?1:-1)*Math.min(58,dist*0.16);
+        const cp1=new Phaser.Math.Vector2(a.x+dx*0.33+nx*bend,a.y+dy*0.33+ny*bend);
+        const cp2=new Phaser.Math.Vector2(a.x+dx*0.66+nx*bend,a.y+dy*0.66+ny*bend);
+        this.curves[key]=new Phaser.Curves.CubicBezier(new Phaser.Math.Vector2(a.x,a.y),cp1,cp2,new Phaser.Math.Vector2(b.x,b.y));
+      });
+    });
+  }
+  getCurve(a,b){ return this.curves[[a,b].sort().join('~')]; }
+  drawEdge(a,b,w,color,alpha){ const curve=this.getCurve(a,b); if(!curve) return; this.mapG.lineStyle(w,color,alpha).strokePoints(curve.getPoints(24),false,false); }
+  bestOut(node,x,y){ let best=0,dist=1e9; node.outs.forEach((id,i)=>{ const n=this.map[id],d=Phaser.Math.Distance.Between(x,y,n.x,n.y); if(d<dist){ dist=d; best=i; } }); return best; }
+  currentNext(node,cell){ if(!node.outs||!node.outs.length) return null; if(node.type==='auto') return node.outs[(cell.seed+cell.hops)%node.outs.length]; return node.outs[Phaser.Math.Clamp(node.route||0,0,node.outs.length-1)]; }
+  hazardOn(a,b){ return this.level.hazards.find(h=>h.hp>0&&edgeMatch(h.edge,a,b)); }
+  collapseOn(a,b){ return this.level.collapses.find(c=>!c.open&&edgeMatch(c.edge,a,b)); }
+  redrawMap(){
+    this.mapG.clear(); this.fxG.clear();
+    this.level.nodes.forEach(n=>{ if(n.outs) n.outs.forEach(id=>this.drawEdge(n.id,id,16,0xffffff,0.12)); });
+    this.level.nodes.forEach(n=>{
+      if(!n.outs) return;
+      n.outs.forEach((id,i)=>{
+        const active=n.type==='auto'?true:((n.route||0)===i||n.outs.length===1);
+        const color=n.type==='valve'?C.gold:(active?C.mint:C.blue);
+        this.drawEdge(n.id,id,active?8:5,color,active?0.95:0.5);
+        if(active){ const curve=this.getCurve(n.id,id); [0.26,0.52,0.78].forEach((t,j)=>{ const p=curve.getPoint((t+this.time.now*0.0002)%1); this.fxG.fillStyle(color,0.5-j*0.08).fillRect(p.x-2,p.y-2,4-j,p.h?4:4-j); }); }
+      });
+    });
+    this.level.collapses.forEach(c=>{ const p=this.getCurve(c.edge[0],c.edge[1]).getPoint(0.52); if(!c.open){ this.fxG.lineStyle(5,C.white,1).lineBetween(p.x-14,p.y-14,p.x+14,p.y+14).lineBetween(p.x+14,p.y-14,p.x-14,p.y+14); } });
+    this.level.hazards.forEach(h=>{ this.hazardBadges[h.id].text.setText(h.hp>0?`GRUMP ${h.hp}`:'POP!'); const s=this.hazardSprites.find(v=>v.hazard.id===h.id); if(s) s.setAlpha(h.hp>0?1:0.25); });
+    if(this.level.boss){ const b=this.level.boss; this.fxG.lineStyle(6,b.vulnerable?C.gold:C.pink,0.95).strokeCircle(b.x,b.y,b.vulnerable?56:48); this.fxG.lineStyle(3,C.white,0.6).strokeCircle(b.x,b.y,68); }
+  }
+  spawnDrop(){ const cell={from:'src',to:'a',t:0,speed:0.26+Math.random()*0.05,seed:Phaser.Math.Between(0,9),hops:0,wiggle:Math.random()*Math.PI*2}; cell.sprite=pxSprite(this,'dropPx',this.map.src.x,this.map.src.y,28,28,7); this.cells.push(cell); }
+  popHazard(h,direct){
+    if(this.pausedGame||h.hp<=0) return false;
+    if(!direct&&this.useKeyboardCursor){ const d=Phaser.Math.Distance.Between(this.cursor.x,this.cursor.y,h.x,h.y); if(d>180){ this.showBottom('Move the KEY badge closer, then press Space.',1.6); return false; } }
+    h.hp=Math.max(0,h.hp-1); this.spark(h.x,h.y,C.gold); this.redrawMap(); this.showBottom(h.hp===0?'Pop! That path is clear!':'Nice pop!',1.2); return true;
+  }
+  popGlobalNearest(){ const live=this.level.hazards.filter(h=>h.hp>0).sort((a,b)=>a.hp-b.hp); if(live[0]) this.popHazard(live[0],true); }
+  popNearestByCursor(){ const live=this.level.hazards.filter(h=>h.hp>0).map(h=>({h,d:Phaser.Math.Distance.Between(this.cursor.x,this.cursor.y,h.x,h.y)})).sort((a,b)=>a.d-b.d); if(live[0]) this.popHazard(live[0].h,false); }
+  popNearestTouch(){ const live=this.level.hazards.filter(h=>h.hp>0).map(h=>({h,d:Phaser.Math.Distance.Between(CX,GAME_BOTTOM-40,h.x,h.y)})).sort((a,b)=>a.d-b.d); if(live[0]) this.popHazard(live[0].h,true); }
+  flipNearestTurn(){ const near=this.routeSprites.map(s=>({s,d:Phaser.Math.Distance.Between(this.cursor.x,this.cursor.y,s.x,s.y)})).sort((a,b)=>a.d-b.d)[0]; if(!near) return; near.s.node.route=(near.s.node.route+1)%near.s.node.outs.length; this.spark(near.s.x,near.s.y,C.mint); this.redrawMap(); this.showBottom('Turn Bubble flipped!',1.2); }
+  releaseRush(){
+    if(!this.allowRush) return;
+    if(this.rush>=100){
+      if(this.level.boss&&this.level.boss.vulnerable){
+        const b=this.level.boss; b.hp=Math.max(0,b.hp-1); b.vulnerable=false; b.charge=0; b.vulnTimer=0; this.spark(b.x,b.y,C.mint); this.level.hazards.filter(h=>h.hp>0).sort(()=>Math.random()-0.5).slice(0,2).forEach(h=>h.hp=Math.max(0,h.hp-1)); this.redrawMap();
+        if(b.hp<=0) this.finishLevel(); else this.showBottom('Rainbow Rush smashed the storm!',1.6);
+      }else{ this.rushTime=4.2; this.showBottom('Rainbow Rush! Smile Drops can zoom through trouble for a moment!',1.8); }
+      this.cheer=Math.min(100,this.cheer+4); this.rush=0;
+    }
+    this.flowHold=false; this.flowPointerId=null;
+  }
+  spark(x,y,color){ const s=this.add.image(x,y,'uiSpark').setTint(color).setScale(0.8).setDepth(30); this.tweens.add({targets:s,scale:2.8,alpha:0,duration:260,onComplete:()=>s.destroy()}); }
+  showBottom(msg,time){ this.bottomMsg=msg; this.bottomTimer=time||1.8; }
+  startGuide(){
+    const makeArrow=(x,y,angle,text)=>{ const a=this.add.image(x,y,'uiArrow').setAngle(angle).setDepth(30).setScale(1.2); const b=addBadge(this,x,y-26,text,C.gold,'#1a1030',96,31,'bold 16px "Trebuchet MS"'); this.tweens.add({targets:[a,b.container],y:'-=12',duration:500,yoyo:true,repeat:20,ease:'Sine.inOut'}); this.hintSprites.push(a,b.container); };
+    if(this.levelIndex===0){ this.hand=this.add.image(this.level.hazards[0].x,this.level.hazards[0].y+74,'uiHand').setDepth(30); this.tweens.add({targets:this.hand,y:'-=30',duration:420,yoyo:true,repeat:5,ease:'Sine.inOut'}); makeArrow(this.level.hazards[0].x,this.level.hazards[0].y-84,90,'TAP'); }
+    else if(this.levelIndex===1){ this.hand=this.add.image(this.map.a.x-16,this.map.a.y+84,'uiHand').setDepth(30); this.tweens.add({targets:this.hand,x:this.map.b.x-10,y:this.map.b.y+36,duration:1100,yoyo:true,repeat:3,ease:'Sine.inOut'}); makeArrow(this.map.a.x,this.map.a.y-86,90,'DRAG'); makeArrow(this.level.hazards[0].x,this.level.hazards[0].y-84,90,'TAP'); }
+    else{ if(this.isTouch){ this.hand=this.add.image(472,918,'uiHand').setDepth(30); this.tweens.add({targets:this.hand,scale:1.12,duration:700,yoyo:true,repeat:6,ease:'Sine.inOut'}); makeArrow(472,868,-90,'HOLD'); } makeArrow(this.map.a.x,this.map.a.y-86,90,'DRAG'); makeArrow(this.level.hazards[0].x,this.level.hazards[0].y-84,90,'TAP'); }
+    this.time.delayedCall(5000,()=>{ if(this.hand){ this.hand.destroy(); this.hand=null; } });
+    this.time.delayedCall(10000,()=>{ this.hintSprites.forEach(s=>s.destroy()); this.hintSprites=[]; });
+    this.showBottom(this.level.rule,3.0);
+  }
+  moveCursor(dt){
+    if(!this.useKeyboardCursor) return;
+    const ax=(this.keys.left.isDown||this.wasd.A.isDown?-1:0)+(this.keys.right.isDown||this.wasd.D.isDown?1:0);
+    const ay=(this.keys.up.isDown||this.wasd.W.isDown?-1:0)+(this.keys.down.isDown||this.wasd.S.isDown?1:0);
+    if(ax||ay){ const len=Math.max(1,Math.hypot(ax,ay)); this.cursor.vx=(ax/len)*220; this.cursor.vy=(ay/len)*220; } else { this.cursor.vx*=0.82; this.cursor.vy*=0.82; }
+    this.cursor.x=Phaser.Math.Clamp(this.cursor.x+this.cursor.vx*dt,26,W-26); this.cursor.y=Phaser.Math.Clamp(this.cursor.y+this.cursor.vy*dt,GAME_TOP+26,GAME_BOTTOM-26);
+    this.cursorSprite.setPosition(this.cursor.x,this.cursor.y); this.cursorLabel.container.setPosition(this.cursor.x,this.cursor.y-28);
+  }
+  updateSystems(dt){
+    let redraw=false;
+    this.level.nodes.forEach(n=>{ if(n.type==='valve'){ n.tick+=dt; if(n.tick>=n.period){ n.tick=0; n.route=(n.route+1)%n.outs.length; redraw=true; this.spark(n.x,n.y,C.gold); } } });
+    this.level.collapses.forEach(c=>{ c.timer+=dt*1000; if(c.timer>=(c.open?c.openFor:c.closedFor)){ c.timer=0; c.open=!c.open; redraw=true; const p=this.getCurve(c.edge[0],c.edge[1]).getPoint(0.52); this.spark(p.x,p.y,c.open?C.mint:C.pink); } });
+    this.regenClock+=dt; if(this.regenClock>=1){ this.regenClock=0; this.level.hazards.forEach(h=>{ if(h.hp<h.max&&Math.random()<h.regen){ h.hp++; redraw=true; } }); }
+    if(this.level.boss){ const b=this.level.boss; b.stormTimer+=dt; if(b.vulnerable){ b.vulnTimer+=dt; if(b.vulnTimer>6.2){ b.vulnerable=false; b.charge=0; b.vulnTimer=0; redraw=true; this.showBottom('The storm closed up again. Fill the homes!',1.8); } } if(b.stormTimer>=b.stormEvery){ b.stormTimer=0; this.cheer=Math.max(0,this.cheer-4.5); this.level.hazards.filter(h=>h.hp<h.max).sort(()=>Math.random()-0.5).slice(0,2).forEach(h=>h.hp++); redraw=true; this.spark(b.x,b.y,C.pink); this.showBottom('Storm shake! Keep the Glow Homes shining!',1.8); } }
+    if(redraw) this.redrawMap();
+  }
+  onSaved(node){
+    this.saved++; this.cheer=Math.min(100,this.cheer+4.2); this.spark(node.x,node.y,C.gold);
+    if(this.level.boss){ const b=this.level.boss; if(!b.vulnerable){ b.charge=Math.min(b.shieldGoal,b.charge+1); if(b.charge>=b.shieldGoal){ b.vulnerable=true; b.vulnTimer=0; this.redrawMap(); this.showBottom(this.isTouch?'Rainbow Rush is ready!':'Hold Shift when Rush hits 100%!',2.0); } } }
+    else if(this.saved>=this.level.goal) this.finishLevel();
+  }
+  updateDrops(dt){
+    this.cells=this.cells.filter(c=>{
+      const curve=this.getCurve(c.from,c.to); if(!curve){ c.sprite.destroy(); return false; }
+      c.t+=c.speed*dt*(this.rushTime>0?1.85:1);
+      const p=curve.getPoint(Phaser.Math.Clamp(c.t,0,1)); c.sprite.setPosition(p.x+Math.sin(this.time.now*0.01+c.wiggle)*2,p.y+Math.cos(this.time.now*0.011+c.wiggle)*2);
+      if(c.t<1) return true;
+      const blockH=this.hazardOn(c.from,c.to), blockC=this.collapseOn(c.from,c.to);
+      if((blockH||blockC)&&this.rushTime<=0){ this.cheer=Math.max(0,this.cheer-(blockC?7:5.5)); this.spark(p.x,p.y,C.pink); c.sprite.destroy(); return false; }
+      if((blockH||blockC)&&this.rushTime>0){ if(blockH) blockH.hp=Math.max(0,blockH.hp-1); this.redrawMap(); }
+      const node=this.map[c.to];
+      if(node.type==='sink'){ this.onSaved(node); c.sprite.destroy(); return false; }
+      c.from=c.to; c.hops++; c.to=this.currentNext(node,c); c.t=0; if(!c.to){ c.sprite.destroy(); return false; } return true;
+    });
+  }
+  finishLevel(){ if(this.levelIndex===LEVELS.length-1) this.scene.start('end'); else this.scene.start('card',{mode:'clear',levelIndex:this.levelIndex,nextIndex:this.levelIndex+1,saved:this.saved,cheer:this.cheer}); }
+  failLevel(){ this.scene.start('card',{mode:'fail',levelIndex:this.levelIndex,saved:this.saved,cheer:this.cheer}); }
+  togglePause(){ this.pausedGame=!this.pausedGame; this.pauseText.setVisible(this.pausedGame); if(this.pausedGame) this.showBottom('Paused. Two-finger tap or press P to play again.',1.8); }
+  updateHud(dt){
+    if(this.bottomTimer>0) this.bottomTimer-=dt;
+    const boss=this.level.boss, tail=boss?`STORM ${boss.hp}/${boss.max}   HEART ${boss.charge}/${boss.shieldGoal}${boss.vulnerable?' OPEN!':''}`:`SAVED ${this.saved}/${this.level.goal}`;
+    this.statusBadge.text.setText(`CHEER ${roundNum(this.cheer)}%   ${this.allowRush?`RUSH ${roundNum(this.rush)}%   `:''}${tail}`);
+    if(this.bottomTimer>0&&this.bottomMsg) this.bottomBadge.text.setText(this.bottomMsg);
+    else this.bottomBadge.text.setText(this.isTouch?this.level.rule:(this.useKeyboardCursor?(this.allowRush?'Arrows move • Space pops • Enter flips turns • Shift uses Rush':'Arrows move • Space pops • Enter flips turns'):'Space pops nearest blob'));
+  }
+  update(t,delta){
+    const dt=delta/1000; animateFloaters(this,t); if(this.pausedGame){ this.updateHud(dt); return; }
+    this.moveCursor(dt);
+    if(this.allowRush&&(this.wasd.SHIFT.isDown||this.flowHold)) this.rush=Math.min(100,this.rush+38*dt); else if(this.rushTime<=0) this.rush=Math.max(0,this.rush-12*dt);
+    if(this.rushTime>0) this.rushTime=Math.max(0,this.rushTime-dt);
+    this.cheer=Math.max(0,this.cheer-(this.level.cheerDrain-(this.rushTime>0?0.9:0))*dt);
+    this.spawnClock+=delta; if(this.spawnClock>=this.level.spawnMs){ this.spawnClock=0; this.spawnDrop(); }
+    this.updateSystems(dt); this.updateDrops(dt);
+    if(this.cheer<=0) this.failLevel();
+    this.updateHud(dt);
+  }
+}
+
+new Phaser.Game({
+  type:Phaser.AUTO,
+  width:W,
+  height:H,
+  pixelArt:true,
+  backgroundColor:'#170f29',
+  scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH,parent:document.body},
+  scene:[BootScene,TitleScene,PlayScene,CardScene,EndScene],
+  input:{activePointers:3},
+  render:{pixelArt:true,roundPixels:true,antialias:false}
+});
+</script>
+</body>
+</html>
