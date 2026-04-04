@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Shingle Symphony</title>
+<style>
+  html,body{margin:0;height:100%;background:#1E1B2E;overflow:hidden;font-family:"Trebuchet MS",Verdana,Arial,sans-serif}
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{image-rendering:pixelated;image-rendering:crisp-edges;touch-action:none}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
+</head>
+<body>
+<script>
+const W=540,H=960,HUD_H=60,CTRL_H=120,GAME_TOP=HUD_H,GAME_BOTTOM=H-CTRL_H,GAME_H=GAME_BOTTOM-GAME_TOP,CX=W/2;
+const C={brick:0xD95D39,gold:0xF6BD60,sage:0x84A59D,rose:0xF28482,blue:0x5C7AEA,cream:0xF7EDE2,panel:0x372b58,panel2:0x4f3c78,ink:0x171024,sky:0x7db0e1,grass:0x7cbc66};
+const STORY='The real story behind this game is about roofers who stepped in to help 78-year-old Mike Watkinson after a scammer took money and left his roof badly damaged. The team repaired the roof for free, protecting his home during a painful time shortly after he lost his wife. It is a reminder that practical kindness from skilled neighbors can make a huge difference.';
+const CTA='Celebrate helpers who rebuild trust — a repaired home can bring real peace.';
+const FACTS=['Roof repairs are most urgent before rain makes damage worse.','In the real story, roofers repaired the widower’s damaged roof for free after he had been scammed.'];
+const LEVELS=[
+  {name:'Ladder Lane', subtitle:'Drag matching Sunny Shingles into the glowing roof gaps.', comfortStart:78, target:['Sunny Shingle','Sunny Shingle','Sunny Shingle','Sunny Shingle','Sunny Shingle'], leaks:false, patch:false, fact:FACTS[0]},
+  {name:'Gutter Groove', subtitle:'Place roof pieces and tap Sneaky Leaks before they spread.', comfortStart:74, target:['Strong Board','Sunny Shingle','Seal Strip','Sunny Shingle','Strong Board','Seal Strip','Sunny Shingle'], leaks:true, patch:false, fact:FACTS[1]},
+  {name:'Hearthlight Finale', subtitle:'Chain big fixes, stop leaks, and fire Perfect Patch in the storm.', comfortStart:76, target:['Strong Board','Sunny Shingle','Seal Strip','Sunny Shingle','Strong Board','Seal Strip','Sunny Shingle','Seal Strip'], leaks:true, patch:true, fact:null}
+];
+const TILE_INFO={
+  'Sunny Shingle':{color:0xD95D39,fact:'Roofs help keep homes dry and cozy in bad weather.'},
+  'Strong Board':{color:0x84A59D,fact:'A solid base helps everything above it stay safe.'},
+  'Seal Strip':{color:0xF6BD60,fact:'Tiny gaps can let in a lot of water if they are ignored.'}
+};
+const SLOT_POS=[
+  {x:150,y:182},{x:228,y:214},{x:306,y:246},{x:384,y:278},
+  {x:188,y:352},{x:266,y:384},{x:344,y:416},{x:422,y:448}
+];
+function roundNum(n){return Math.max(0,Math.round(n));}
+function addBadge(scene,x,y,text,fill=C.panel,textColor='#F7EDE2',width=null,depth=20,font='bold 16px "Trebuchet MS"'){
+  const t=scene.add.text(0,0,text,{font,fill:textColor,align:'center',wordWrap:width?{width:width-24}:undefined,lineSpacing:4}).setOrigin(0.5);
+  const w=width||Math.max(76,t.width+24),h=Math.max(30,t.height+14);
+  const g=scene.add.graphics();
+  g.fillStyle(fill,1).lineStyle(3,C.cream,0.95).fillRoundedRect(-w/2,-h/2,w,h,12).strokeRoundedRect(-w/2,-h/2,w,h,12);
+  return scene.add.container(x,y,[g,t]).setDepth(depth);
+}
+function addButton(scene,x,y,w,h,text,fill,textColor='#171024'){
+  const r=scene.add.rectangle(x,y,w,h,fill).setStrokeStyle(5,C.cream).setInteractive();
+  const t=scene.add.text(x,y,text,{font:'bold 22px "Trebuchet MS"',fill:textColor}).setOrigin(0.5);
+  scene.tweens.add({targets:r,scaleX:1.04,scaleY:1.04,duration:760,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+  return {rect:r,text:t};
+}
+function makeUi(scene){
+  if(scene.textures.exists('tileShell')) return;
+  const g=scene.make.graphics({x:0,y:0,add:false});
+  g.fillStyle(C.gold).fillRoundedRect(0,0,88,88,18).lineStyle(4,C.cream).strokeRoundedRect(0,0,88,88,18); g.generateTexture('tileShell',88,88); g.clear();
+  g.fillStyle(C.gold).fillTriangle(10,12,28,2,28,22).fillStyle(C.cream).fillRect(0,9,16,6); g.generateTexture('uiArrow',30,24); g.clear();
+  g.fillStyle(C.cream).fillRect(16,4,14,16).fillRect(8,18,24,20).fillRect(32,12,8,18).fillStyle(C.rose).fillRect(20,18,8,2).fillStyle(C.ink).fillRect(18,12,3,3).fillRect(25,12,3,3); g.generateTexture('uiHand',52,44); g.clear();
+  g.fillStyle(C.gold).fillRect(6,6,12,12).fillStyle(C.cream).fillRect(8,8,8,8); g.generateTexture('uiSpark',24,24); g.clear();
+  g.fillStyle(C.gold).fillPoints([new Phaser.Geom.Point(28,2),new Phaser.Geom.Point(34,20),new Phaser.Geom.Point(54,20),new Phaser.Geom.Point(38,32),new Phaser.Geom.Point(44,54),new Phaser.Geom.Point(28,40),new Phaser.Geom.Point(12,54),new Phaser.Geom.Point(18,32),new Phaser.Geom.Point(2,20),new Phaser.Geom.Point(22,20)],true);
+  g.lineStyle(3,C.cream).strokePoints([new Phaser.Geom.Point(28,2),new Phaser.Geom.Point(34,20),new Phaser.Geom.Point(54,20),new Phaser.Geom.Point(38,32),new Phaser.Geom.Point(44,54),new Phaser.Geom.Point(28,40),new Phaser.Geom.Point(12,54),new Phaser.Geom.Point(18,32),new Phaser.Geom.Point(2,20),new Phaser.Geom.Point(22,20)],true,true); g.generateTexture('starIcon',56,56); g.clear();
+  g.fillStyle(C.sage).fillRoundedRect(0,0,46,22,8).lineStyle(3,C.cream).strokeRoundedRect(0,0,46,22,8).fillStyle(C.cream).fillRect(10,7,26,8); g.generateTexture('boardMini',46,22); g.clear();
+  g.fillStyle(C.gold).fillRoundedRect(0,0,44,16,6).lineStyle(3,C.cream).strokeRoundedRect(0,0,44,16,6); g.generateTexture('sealMini',44,16); g.clear();
+  g.fillStyle(C.brick).fillRect(0,10,52,28); g.fillStyle(C.cream).fillRect(4,14,44,4).fillRect(8,22,40,4).fillRect(12,30,36,4); g.lineStyle(3,C.cream).strokeRect(0,10,52,28); g.generateTexture('shingleMini',52,40); g.destroy();
+}
+function whiteToAlpha(scene, rawKey, outKey){
+  if(scene.textures.exists(outKey)||!scene.textures.exists(rawKey)) return;
+  const img=scene.textures.get(rawKey).getSourceImage();
+  const src=document.createElement('canvas'); src.width=img.width; src.height=img.height;
+  const ctx=src.getContext('2d',{willReadFrequently:true}); ctx.drawImage(img,0,0);
+  const data=ctx.getImageData(0,0,src.width,src.height); let minX=src.width,minY=src.height,maxX=-1,maxY=-1;
+  for(let i=0;i<data.data.length;i+=4){
+    const r=data.data[i],g=data.data[i+1],b=data.data[i+2],a=data.data[i+3],x=(i/4)%src.width,y=((i/4)/src.width)|0;
+    if(a&&r>244&&g>244&&b>244) data.data[i+3]=0;
+    else if(data.data[i+3]){ if(x<minX)minX=x; if(y<minY)minY=y; if(x>maxX)maxX=x; if(y>maxY)maxY=y; }
+  }
+  ctx.putImageData(data,0,0);
+  if(maxX<0){ scene.textures.addImage(outKey,img); return; }
+  const pad=2,w=maxX-minX+1,h=maxY-minY+1;
+  const out=document.createElement('canvas'); out.width=w+pad*2; out.height=h+pad*2;
+  out.getContext('2d').drawImage(src,minX,minY,w,h,pad,pad,w,h);
+  scene.textures.addCanvas(outKey,out);
+}
+function spr(scene,key,fb,x,y,w,h,depth=8){ const k=scene.textures.exists(key)?key:fb; return scene.add.image(x,y,k).setDisplaySize(w,h).setDepth(depth); }
+function drawRoofTown(scene,boss=false){
+  scene.add.rectangle(CX,H/2,W,H,0x24314d);
+  scene.add.rectangle(CX,HUD_H/2,W,HUD_H,C.panel);
+  scene.add.rectangle(CX,H-CTRL_H/2,W,CTRL_H,C.panel);
+  scene.add.rectangle(CX,HUD_H+GAME_H/2,W,GAME_H,C.sky);
+  if(scene.textures.exists('bgMain')){
+    scene.add.image(CX,HUD_H+GAME_H/2,'bgMain').setDisplaySize(W-14,GAME_H-14).setDepth(0).setAlpha(0.78);
+    scene.add.image(CX+10,HUD_H+GAME_H/2+10,'bgMain').setDisplaySize(W-38,GAME_H-44).setDepth(0).setAlpha(0.16).setTint(boss?0x8ab0ff:0xffd59c);
+  }
+  scene.add.rectangle(CX,HUD_H+GAME_H/2,W-14,GAME_H-14,C.panel2,0.12).setStrokeStyle(4,C.cream,0.35).setDepth(1);
+  const g=scene.add.graphics().setDepth(2);
+  g.fillStyle(0xa86b4f).fillRoundedRect(54,440,432,180,16);
+  g.fillStyle(0xf7d6b4).fillRect(88,500,108,92).fillRect(232,482,78,110).fillRect(350,500,94,92);
+  g.fillStyle(0xffe7a1).fillRect(108,520,68,52).fillRect(248,500,46,72).fillRect(366,520,62,52);
+  g.fillStyle(0x8d5a3b).fillRect(100,396,26,44).fillRect(390,390,28,50);
+  g.fillStyle(0x6aa55d).fillCircle(44,640,26).fillCircle(500,652,30).fillCircle(90,690,20).fillCircle(470,706,24);
+  g.fillStyle(0x6d4a31).fillTriangle(48,444,270,130,492,444).fillTriangle(104,468,270,230,436,468);
+  scene.bgFloaters=[];
+  for(let i=0;i<10;i++){ const puff=scene.add.ellipse(40+(i*52)%W,96+(i*70)%H,24+(i%3)*10,16+(i%2)*6,[C.gold,C.sage,C.rose][i%3],0.14).setDepth(1); puff.baseX=puff.x; puff.baseY=puff.y; puff.seed=i*.76; scene.bgFloaters.push(puff); }
+}
+function animateBg(scene,t){ if(scene.bgFloaters) scene.bgFloaters.forEach((f,i)=>{ f.x=f.baseX+Math.sin(t*0.0005+f.seed)*(i%2?8:5); f.y=f.baseY+Math.cos(t*0.0004+f.seed)*(i%2?5:3); }); }
+function trayTiles(level){ return level.patch ? ['Sunny Shingle','Strong Board','Seal Strip'] : level.leaks ? ['Sunny Shingle','Strong Board','Seal Strip'] : ['Sunny Shingle']; }
+
+class Boot extends Phaser.Scene{
+  constructor(){super('boot');}
+  preload(){
+    this.add.rectangle(CX,H/2,W,H,0x24314d);
+    this.add.text(CX,410,'LOADING SHINGLE SYMPHONY',{font:'bold 28px "Trebuchet MS"',fill:'#F7EDE2'}).setOrigin(0.5);
+    this.add.rectangle(CX,474,340,28,0x2a1f47).setStrokeStyle(4,C.cream);
+    const bar=this.add.rectangle(CX-166,474,0,20,C.gold).setOrigin(0,0.5);
+    this.load.on('progress',v=>bar.width=332*v);
+    this.load.image('rawHero','assets/sprite-hero.png');
+    this.load.image('rawEnemy','assets/sprite-enemy.png');
+    this.load.image('rawGoal','assets/sprite-goal.png');
+    this.load.image('bgMain','assets/bg-main.png');
+  }
+  create(){ makeUi(this); whiteToAlpha(this,'rawHero','hero'); whiteToAlpha(this,'rawEnemy','enemy'); whiteToAlpha(this,'rawGoal','goal'); this.scene.start('legend'); }
+}
+
+class Legend extends Phaser.Scene{
+  constructor(){super('legend');}
+  create(){
+    drawRoofTown(this,false);
+    spr(this,'hero','starIcon',36,30,40,40,20); spr(this,'goal','starIcon',74,22,26,26,20);
+    addBadge(this,CX,18,'SHINGLE SYMPHONY',C.panel2,'#F7EDE2',260,20,'bold 22px "Trebuchet MS"');
+    addBadge(this,CX,44,'Snap every tile into place and turn a battered house back into home.',0x5b497e,'#F7EDE2',430,20,'bold 14px "Trebuchet MS"');
+    const pW=492,pH=650,pX=CX,pY=GAME_TOP+GAME_H/2-2;
+    this.add.graphics().fillStyle(C.panel,0.96).lineStyle(4,C.cream,0.95).fillRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28).strokeRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28);
+    addBadge(this,pX,pY-pH/2+32,'ROOF FRIEND GUIDE',C.sage,'#171024',244,10,'bold 22px "Trebuchet MS"');
+    const cards=[
+      {x:pX-146,y:pY-118,type:'hero',name:'Dot Hammerly',fact:'Skilled workers can fix problems that seem overwhelming.'},
+      {x:pX+146,y:pY-118,type:'shingle',name:'Sunny Shingle',fact:'Roofs help keep homes dry and cozy in bad weather.'},
+      {x:pX-146,y:pY+78,type:'board',name:'Strong Board',fact:'A solid base helps everything above it stay safe.'},
+      {x:pX+146,y:pY+78,type:'seal',name:'Seal Strip',fact:'Tiny gaps can let in a lot of water if they are ignored.'},
+      {x:pX-146,y:pY+244,type:'leak',name:'Sneaky Leak',fact:'Even a small roof hole can become a big problem in rain.'},
+      {x:pX+146,y:pY+244,type:'star',name:'Comfort Star',fact:'A safe home can help people feel calm again.'}
+    ];
+    cards.forEach((c,i)=>{
+      const w=196,h=142; this.add.graphics().fillStyle(0x2a1f49,0.96).lineStyle(3,C.cream,0.9).fillRoundedRect(c.x-w/2,c.y-h/2,w,h,20).strokeRoundedRect(c.x-w/2,c.y-h/2,w,h,20);
+      let img;
+      if(c.type==='hero') img=spr(this,'hero','starIcon',c.x,c.y-16,74,74,8);
+      else if(c.type==='shingle') img=this.add.image(c.x,c.y-18,'shingleMini').setDisplaySize(62,46).setDepth(8);
+      else if(c.type==='board') img=this.add.image(c.x,c.y-18,'boardMini').setDisplaySize(66,32).setDepth(8);
+      else if(c.type==='seal') img=this.add.image(c.x,c.y-18,'sealMini').setDisplaySize(68,24).setDepth(8);
+      else if(c.type==='leak') img=spr(this,'enemy','starIcon',c.x,c.y-18,84,66,8);
+      else img=spr(this,'goal','starIcon',c.x,c.y-18,74,74,8);
+      this.tweens.add({targets:img,scaleX:1.08,scaleY:1.08,duration:700+80*i,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+      addBadge(this,c.x,c.y+28,c.name,C.gold,'#171024',140,9,'bold 17px "Trebuchet MS"');
+      this.add.text(c.x,c.y+68,c.fact,{font:'16px "Trebuchet MS"',fill:'#F7EDE2',align:'center',wordWrap:{width:158},lineSpacing:4}).setOrigin(0.5);
+    });
+    this.hand=this.add.image(pX-146,pY-118,'uiHand').setDepth(20);
+    this.tweens.add({targets:this.hand,x:pX-38,y:pY-12,duration:1200,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    addBadge(this,CX,868,'Level 1 starts simple: drag Sunny Shingles into the glowing roof gaps.',C.gold,'#171024',440,20,'bold 18px "Trebuchet MS"');
+    const btn=addButton(this,CX,920,292,64,'START FIXING',C.gold,'#171024');
+    btn.rect.on('pointerdown',()=>this.scene.start('play',{levelIndex:0}));
+    this.input.keyboard.on('keydown-SPACE',()=>this.scene.start('play',{levelIndex:0}));
+  }
+  update(t){ animateBg(this,t); }
+}
+
+class Fact extends Phaser.Scene{
+  constructor(){super('fact');}
+  init(data){ this.info=data; }
+  create(){
+    drawRoofTown(this,this.info.fail);
+    spr(this,'hero','starIcon',36,30,40,40,20); spr(this,'goal','starIcon',74,22,26,26,20);
+    addBadge(this,CX,18,this.info.fail?'TRY AGAIN':'FUN FACT CARD',this.info.fail?C.red:C.sage,this.info.fail?'#F7EDE2':'#171024',220,20,'bold 22px "Trebuchet MS"');
+    const pW=470,pH=560,pX=CX,pY=GAME_TOP+GAME_H/2;
+    this.add.graphics().fillStyle(C.panel,0.96).lineStyle(4,C.cream,0.95).fillRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28).strokeRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28);
+    if(this.info.fail){
+      spr(this,'enemy','starIcon',CX,pY-126,128,94,8);
+      addBadge(this,CX,pY-34,'The roof got too soggy!',C.red,'#F7EDE2',246,9,'bold 24px "Trebuchet MS"');
+      this.add.text(CX,pY+32,'Try again and fit the right pieces faster. In later levels, tap leaks before they spread into bigger trouble.',{font:'20px "Trebuchet MS"',fill:'#F7EDE2',align:'center',wordWrap:{width:392},lineSpacing:8}).setOrigin(0.5);
+    }else{
+      spr(this,'goal','starIcon',CX,pY-126,118,118,8);
+      addBadge(this,CX,pY-34,'Roof fact',C.gold,'#171024',170,9,'bold 24px "Trebuchet MS"');
+      this.add.text(CX,pY+16,this.info.fact,{font:'21px "Trebuchet MS"',fill:'#F7EDE2',align:'center',wordWrap:{width:396},lineSpacing:8}).setOrigin(0.5);
+      addBadge(this,CX,pY+148,`Next: ${LEVELS[this.info.next].name}`,C.sage,'#171024',240,9,'bold 20px "Trebuchet MS"');
+      this.add.text(CX,pY+196,LEVELS[this.info.next].subtitle,{font:'18px "Trebuchet MS"',fill:'#F7EDE2',align:'center',wordWrap:{width:382},lineSpacing:6}).setOrigin(0.5);
+    }
+    addBadge(this,CX,868,`Stars ${this.info.score}   Comfort ${roundNum(this.info.comfort)}%   Leaks ${this.info.leaks}`,C.panel2,'#F7EDE2',320,20,'bold 18px "Trebuchet MS"');
+    const btn=addButton(this,CX,920,270,64,this.info.fail?'TRY AGAIN':'NEXT LEVEL',this.info.fail?C.red:C.gold,this.info.fail?'#F7EDE2':'#171024');
+    btn.rect.on('pointerdown',()=>this.scene.start('play',{levelIndex:this.info.fail?this.info.level:this.info.next}));
+    this.input.keyboard.on('keydown-SPACE',()=>this.scene.start('play',{levelIndex:this.info.fail?this.info.level:this.info.next}));
+  }
+  update(t){ animateBg(this,t); }
+}
+
+class End extends Phaser.Scene{
+  constructor(){super('end');}
+  create(){
+    drawRoofTown(this,true);
+    spr(this,'hero','starIcon',36,30,40,40,20); spr(this,'goal','starIcon',74,22,26,26,20);
+    addBadge(this,CX,18,'THE HOUSE FEELS SAFE AGAIN!',C.sage,'#171024',310,20,'bold 22px "Trebuchet MS"');
+    const pW=486,pH=664,pX=CX,pY=GAME_TOP+GAME_H/2-4;
+    this.add.graphics().fillStyle(C.panel,0.96).lineStyle(4,C.cream,0.95).fillRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28).strokeRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28);
+    spr(this,'hero','starIcon',CX-52,pY-pH/2+88,106,106,8);
+    spr(this,'goal','starIcon',CX+64,pY-pH/2+88,112,112,8);
+    addBadge(this,CX,pY-pH/2+176,'What the real story means',C.gold,'#171024',276,9,'bold 22px "Trebuchet MS"');
+    this.add.text(CX,pY-pH/2+220,'A group of roofers stepped in after a scammer took money and left 78-year-old Mike Watkinson with a badly damaged roof. They fixed it for free during a painful time shortly after he lost his wife. It is a reminder that practical kindness from skilled neighbors can make a huge difference.',{font:'18px "Trebuchet MS"',fill:'#F7EDE2',align:'center',wordWrap:{width:420},lineSpacing:7}).setOrigin(0.5,0);
+    addBadge(this,CX,pY+104,'Exact story text from the brief',C.sage,'#171024',250,9,'bold 18px "Trebuchet MS"');
+    this.add.text(CX,pY+136,STORY,{font:'16px "Trebuchet MS"',fill:'#F7EDE2',align:'center',wordWrap:{width:422},lineSpacing:6}).setOrigin(0.5,0);
+    this.add.text(CX,pY+246,CTA,{font:'bold 18px "Trebuchet MS"',fill:'#F6BD60',align:'center',wordWrap:{width:414},lineSpacing:6}).setOrigin(0.5,0);
+    const btn=addButton(this,CX,920,250,64,'PLAY AGAIN',C.gold,'#171024');
+    btn.rect.on('pointerdown',()=>this.scene.start('play',{levelIndex:0}));
+    this.input.keyboard.on('keydown-SPACE',()=>this.scene.start('play',{levelIndex:0}));
+  }
+  update(t){ animateBg(this,t); }
+}
+
+class Play extends Phaser.Scene{
+  constructor(){super('play');}
+  init(data){ this.levelIndex=data.levelIndex||0; }
+  create(){
+    this.level=LEVELS[this.levelIndex];
+    this.isTouch=!!this.sys.game.device.input.touch;
+    this.paused=false; this.done=false; this.progress=0; this.score=0; this.leakMisses=0; this.comfort=this.level.comfortStart; this.patch=0;
+    this.dragTile=null; this.dragPointer=null; this.currentLeak=null; this.leakClock=0; this.focusIndex=0; this.guideText=''; this.guideTimer=0;
+    drawRoofTown(this,this.level.patch);
+    this.makeHud(); this.makeRoof(); this.makeTray(); this.makeControls(); this.bindInput(); this.startTutorial(); this.updateTarget();
+  }
+  makeHud(){
+    spr(this,'hero','starIcon',34,30,40,40,20); spr(this,'goal','starIcon',74,22,26,26,20);
+    addBadge(this,CX,18,`Level ${this.levelIndex+1}: ${this.level.name}`,C.panel2,'#F7EDE2',290,20,'bold 18px "Trebuchet MS"');
+    this.topBadge=addBadge(this,CX,44,'',C.panel,'#F7EDE2',420,20,'bold 15px "Trebuchet MS"');
+    this.pauseText=this.add.text(CX,GAME_TOP+GAME_H/2,'PAUSED',{font:'bold 46px "Trebuchet MS"',fill:'#F6BD60'}).setOrigin(0.5).setDepth(40).setVisible(false);
+    this.barG=this.add.graphics().setDepth(25);
+  }
+  makeRoof(){
+    this.hero=spr(this,'hero','starIcon',90,GAME_TOP+196,108,108,8);
+    this.heroLabel=addBadge(this,90,GAME_TOP+274,'DOT HAMMERLY',C.brick,'#F7EDE2',138,10,'bold 16px "Trebuchet MS"');
+    this.starGoal=spr(this,'goal','starIcon',438,GAME_TOP+612,116,116,8);
+    this.starLabel=addBadge(this,438,GAME_TOP+688,'COMFORT STAR',C.gold,'#171024',138,10,'bold 16px "Trebuchet MS"');
+    this.roofG=this.add.graphics().setDepth(5);
+    this.roofG.fillStyle(0x7a5036).fillTriangle(60,GAME_TOP+398,270,GAME_TOP+118,480,GAME_TOP+398).fillTriangle(118,GAME_TOP+438,270,GAME_TOP+232,422,GAME_TOP+438);
+    this.roofG.lineStyle(6,0x8f6041).lineBetween(118,GAME_TOP+438,422,GAME_TOP+438).lineBetween(60,GAME_TOP+398,480,GAME_TOP+398);
+    this.slots=LEVELS[this.levelIndex].target.map((name,i)=>{
+      const pos=SLOT_POS[i];
+      const box=this.add.rectangle(pos.x,GAME_TOP+pos.y,58,42,0xffffff,0.10).setStrokeStyle(4,C.cream,0.8).setDepth(6);
+      return {name,x:pos.x,y:GAME_TOP+pos.y,box,filled:false};
+    });
+    this.targetBadge=addBadge(this,270,GAME_TOP+468,'',C.sage,'#171024',220,10,'bold 18px "Trebuchet MS"');
+    if(this.level.patch){
+      this.cloud=spr(this,'enemy','starIcon',270,GAME_TOP+108,150,104,8);
+      this.cloudLabel=addBadge(this,270,GAME_TOP+170,'RAIN GRUMBLER',C.red,'#F7EDE2',150,10,'bold 16px "Trebuchet MS"');
+      this.tweens.add({targets:this.cloud,angle:3,duration:240,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    }
+  }
+  makeTray(){
+    this.tiles=[];
+    const names=trayTiles(this.level), startX=90, y=914;
+    names.forEach((name,i)=>{
+      const tile=this.makeTile(name,startX+i*118,y); this.tiles.push(tile);
+    });
+  }
+  makeTile(name,x,y){
+    const c=this.add.container(x,y).setDepth(18).setSize(90,90).setInteractive(new Phaser.Geom.Rectangle(-45,-45,90,90),Phaser.Geom.Rectangle.Contains);
+    const g=this.add.graphics(); const fill=TILE_INFO[name]?.color||C.gold;
+    g.fillStyle(fill,1).lineStyle(4,C.cream).fillRoundedRect(-42,-42,84,84,18).strokeRoundedRect(-42,-42,84,84,18);
+    if(name==='Sunny Shingle') c.add(this.add.image(0,-6,'shingleMini').setDisplaySize(50,38));
+    if(name==='Strong Board') c.add(this.add.image(0,-4,'boardMini').setDisplaySize(56,26));
+    if(name==='Seal Strip') c.add(this.add.image(0,-4,'sealMini').setDisplaySize(54,20));
+    c.add(g);
+    const t=this.add.text(0,18,name,{font:'bold 13px "Trebuchet MS"',fill:'#171024',align:'center',wordWrap:{width:68}}).setOrigin(0.5);
+    c.add(t); c.bringToTop(g); c.bringToTop(t);
+    c.tileName=name; c.homeX=x; c.homeY=y; c.on('pointerdown',p=>this.startDrag(c,p)); return c;
+  }
+  makeControls(){
+    if(this.level.patch){ this.patchBtn=addButton(this,452,846,126,56,'PERFECT PATCH',C.blue,'#F7EDE2'); this.patchBtn.rect.on('pointerdown',()=>this.usePatch()); }
+    this.ctrlBadge=addBadge(this,CX,846,this.level.leaks?'Drag pieces, then tap leaks before they burble big.':'Drag the matching roof piece into the glowing gap.',C.gold,'#171024',430,20,'bold 18px "Trebuchet MS"');
+  }
+  bindInput(){
+    this.input.on('pointermove',p=>this.dragMove(p));
+    this.input.on('pointerup',p=>this.endDrag(p));
+    this.input.on('pointerdown',p=>{ if(this.input.pointer1.isDown&&this.input.pointer2.isDown) this.togglePause(); if(this.currentLeak&&Phaser.Math.Distance.Between(p.x,p.y,this.currentLeak.x,this.currentLeak.y)<42) this.tapLeak(); });
+    this.keys=this.input.keyboard.addKeys('LEFT,RIGHT,SPACE,P,ENTER');
+    this.input.keyboard.on('keydown-LEFT',()=>this.focusIndex=(this.focusIndex+this.tiles.length-1)%this.tiles.length);
+    this.input.keyboard.on('keydown-RIGHT',()=>this.focusIndex=(this.focusIndex+1)%this.tiles.length);
+    this.input.keyboard.on('keydown-ENTER',()=>this.placeFocused());
+    this.input.keyboard.on('keydown-SPACE',()=>this.level.patch?this.usePatch():this.tapLeak());
+    this.input.keyboard.on('keydown-P',()=>this.togglePause());
+  }
+  togglePause(){ if(this.done) return; this.paused=!this.paused; this.pauseText.setVisible(this.paused); }
+  startTutorial(){
+    this.showGuide('Drag the matching Sunny Shingle into the first glowing gap.',3);
+    const tile=this.tiles[0], slot=this.slots[0];
+    this.arrow=this.add.image(slot.x,slot.y-56,'uiArrow').setAngle(90).setDepth(30).setScale(1.2);
+    this.hand=this.add.image(tile.homeX,tile.homeY+74,'uiHand').setDepth(30);
+    this.tweens.add({targets:this.hand,x:slot.x,y:slot.y+54,duration:1200,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    this.tweens.add({targets:this.arrow,y:'-=14',duration:500,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    this.time.delayedCall(5000,()=>{ if(this.hand){ this.hand.destroy(); this.hand=null; } });
+    this.time.delayedCall(10000,()=>{ if(this.arrow){ this.arrow.destroy(); this.arrow=null; } });
+  }
+  showGuide(text,time=2){ this.guideText=text; this.guideTimer=time; }
+  updateTarget(){
+    const slot=this.slots[this.progress];
+    this.slots.forEach((s,i)=>s.box.setStrokeStyle(4,C.cream,i===this.progress?1:0.4));
+    if(slot) this.targetBadge.list[1].setText(`Next fix: ${slot.name}`);
+    else this.targetBadge.list[1].setText('Roof row complete!');
+    if(this.arrow&&slot) this.arrow.setPosition(slot.x,slot.y-56);
+  }
+  startDrag(tile,pointer){ if(this.done||this.paused) return; this.dragTile=tile; this.dragPointer=pointer.id; tile.setDepth(30); }
+  dragMove(pointer){ if(!this.dragTile||pointer.id!==this.dragPointer) return; this.dragTile.setPosition(pointer.x,pointer.y); }
+  endDrag(pointer){
+    if(!this.dragTile||pointer.id!==this.dragPointer) return;
+    const tile=this.dragTile; this.dragTile=null; this.dragPointer=null;
+    const slot=this.slots[this.progress];
+    if(slot && Phaser.Math.Distance.Between(pointer.x,pointer.y,slot.x,slot.y)<60 && tile.tileName===slot.name){
+      tile.setPosition(slot.x,slot.y).disableInteractive().setDepth(9); slot.filled=true; slot.box.setFillStyle(TILE_INFO[slot.name].color,0.25);
+      this.progress++; this.score+=110; this.comfort=Math.min(100,this.comfort+8); this.patch=Math.min(100,this.patch+14); this.spark(slot.x,slot.y,TILE_INFO[slot.name].color); this.showGuide('Click! That roof piece fits perfectly.',1.4);
+      if(this.level.leaks && !this.currentLeak && this.progress>=2 && this.progress%2===0) this.spawnLeak();
+      if(this.progress>=this.level.target.length && !this.currentLeak) this.finishLevel(); else this.updateTarget();
+    }else{
+      tile.setPosition(tile.homeX,tile.homeY).setDepth(18); this.comfort=Math.max(0,this.comfort-4); this.leakMisses+=1; this.showGuide('That piece does not belong there yet.',1.2);
+    }
+  }
+  placeFocused(){ if(this.tiles[this.focusIndex]){ const slot=this.slots[this.progress]; if(slot&&this.tiles[this.focusIndex].tileName===slot.name){ this.tiles[this.focusIndex].setPosition(slot.x,slot.y); this.endDrag({id:null,x:slot.x,y:slot.y}); } else this.showGuide('That selected piece is not the right match.',1.2); } }
+  spawnLeak(){
+    const free=this.slots.filter((s,i)=>i>=this.progress);
+    const slot=free[Phaser.Math.Between(0,free.length-1)]||this.slots[this.progress]||this.slots[this.slots.length-1];
+    this.currentLeak={x:slot.x+18,y:slot.y-28,life:5.2};
+    this.leakSprite=spr(this,'enemy','starIcon',this.currentLeak.x,this.currentLeak.y,80,62,12);
+    this.leakArrow=this.add.image(this.currentLeak.x,this.currentLeak.y-54,'uiArrow').setAngle(90).setDepth(13);
+    this.tweens.add({targets:[this.leakSprite,this.leakArrow],scaleX:1.08,scaleY:1.08,duration:520,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    this.showGuide('Tap the Sneaky Leak before it spreads!',2);
+  }
+  tapLeak(){
+    if(!this.currentLeak||this.done||this.paused) return;
+    this.score+=140; this.comfort=Math.min(100,this.comfort+10); this.patch=Math.min(100,this.patch+10); this.spark(this.currentLeak.x,this.currentLeak.y,C.gold); this.clearLeak(); this.showGuide('Leak sealed! The roof stays dry.',1.5);
+    if(this.progress>=this.level.target.length) this.finishLevel();
+  }
+  clearLeak(){ if(this.leakSprite){ this.leakSprite.destroy(); this.leakSprite=null; } if(this.leakArrow){ this.leakArrow.destroy(); this.leakArrow=null; } this.currentLeak=null; }
+  usePatch(){
+    if(!this.level.patch||this.patch<100||this.done||this.paused) return;
+    this.patch=0; this.score+=220; this.comfort=Math.min(100,this.comfort+18); this.spark(CX,GAME_TOP+130,C.gold); this.showGuide('Perfect Patch! A whole section locks in tight.',2);
+    if(this.currentLeak) this.tapLeak();
+    const slot=this.slots[this.progress];
+    if(slot){ const auto=this.tiles.find(t=>t.input&&t.input.enabled&&t.tileName===slot.name); if(auto){ auto.setPosition(slot.x,slot.y).disableInteractive().setDepth(9); slot.filled=true; slot.box.setFillStyle(TILE_INFO[slot.name].color,0.25); this.progress++; this.updateTarget(); } }
+    if(this.progress>=this.level.target.length && !this.currentLeak) this.finishLevel();
+  }
+  finishLevel(){ this.done=true; this.time.delayedCall(450,()=>{ if(this.levelIndex===LEVELS.length-1) this.scene.start('end',{score:this.score}); else this.scene.start('fact',{level:this.levelIndex,next:this.levelIndex+1,score:this.score,comfort:this.comfort,leaks:this.leakMisses,fact:this.level.fact,fail:false}); }); }
+  failLevel(){ this.done=true; this.scene.start('fact',{level:this.levelIndex,score:this.score,comfort:this.comfort,leaks:this.leakMisses,fail:true}); }
+  spark(x,y,color){ const s=this.add.image(x,y,'uiSpark').setTint(color).setScale(0.8).setDepth(30); this.tweens.add({targets:s,scale:2.8,alpha:0,duration:240,onComplete:()=>s.destroy()}); }
+  updateHud(){
+    this.topBadge.list[1].setText(`Stars ${this.score}   Comfort ${roundNum(this.comfort)}%   Leaks ${this.leakMisses}${this.level.patch?`   Perfect Patch ${roundNum(this.patch)}%`:''}`);
+    this.barG.clear();
+    this.barG.fillStyle(0x1c1432).fillRoundedRect(12,62,516,14,7); this.barG.fillStyle(C.sage).fillRoundedRect(14,64,Math.max(6,512*this.comfort/100),10,6);
+    this.barG.fillStyle(0x1c1432).fillRoundedRect(12,80,516,14,7); this.barG.fillStyle(C.gold).fillRoundedRect(14,82,Math.max(0,512*(this.progress/this.slots.length)),10,6);
+    if(this.level.patch){ this.barG.fillStyle(0x1c1432).fillRoundedRect(12,98,516,14,7); this.barG.fillStyle(C.blue).fillRoundedRect(14,100,Math.max(0,512*this.patch/100),10,6); }
+    if(!this.guideBadge) this.guideBadge=addBadge(this,CX,788,'',C.gold,'#171024',430,22,'bold 18px "Trebuchet MS"');
+    this.guideBadge.list[1].setText(this.guideTimer>0?this.guideText:(this.level.leaks?'Drag the next piece, then tap leaks if they pop up.':'Drag the matching Sunny Shingle into the glowing gap.'));
+  }
+  update(time,delta){
+    animateBg(this,time);
+    if(this.done) return;
+    if(this.paused){ this.updateHud(); return; }
+    const dt=delta/1000;
+    if(this.guideTimer>0) this.guideTimer-=dt;
+    this.hero.y=GAME_TOP+196+Math.sin(time*0.008)*5;
+    this.starGoal.angle=Math.sin(time*0.006)*4;
+    if(this.cloud){ this.cloud.x=270+Math.sin(time*0.0035)*20; this.cloud.y=GAME_TOP+108+Math.cos(time*0.0045)*8; }
+    this.comfort=Math.max(0,this.comfort-(this.level.patch?3.9:this.level.leaks?3.1:2.2)*dt);
+    if(this.currentLeak){ this.currentLeak.life-=dt; if(this.currentLeak.life<=0){ this.clearLeak(); this.comfort=Math.max(0,this.comfort-10); this.leakMisses+=1; this.showGuide('The leak spread before it got fixed!',1.8); } }
+    if(this.level.patch && Math.floor(time/4600)!==Math.floor((time-delta)/4600) && !this.currentLeak && !this.done) this.spawnLeak();
+    this.updateHud();
+    if(this.comfort<=0) this.failLevel();
+  }
+}
+new Phaser.Game({type:Phaser.AUTO,width:W,height:H,pixelArt:true,backgroundColor:'#24314d',scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH,parent:document.body},scene:[Boot,Legend,Play,Fact,End],input:{activePointers:3},render:{pixelArt:true,roundPixels:true,antialias:false}});
+</script>
+</body>
+</html>
