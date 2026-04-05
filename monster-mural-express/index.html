@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Monster Mural Express</title>
+<style>
+  html,body{margin:0;height:100%;background:#2b1d47;overflow:hidden;font-family:"Trebuchet MS",Verdana,Arial,sans-serif}
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{image-rendering:pixelated;image-rendering:crisp-edges;touch-action:none}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
+</head>
+<body>
+<script>
+const W=540,H=960,HUD_H=60,CTRL_H=120,GAME_TOP=HUD_H,GAME_BOTTOM=H-CTRL_H,GAME_H=GAME_BOTTOM-GAME_TOP,CX=W/2;
+const C={pink:0xFF4FA3,gold:0xFFD23F,mint:0x41E2BA,blue:0x5B6CFF,orange:0xFF8A5B,cream:0xFFF4E6,ink:0x201236,panel:0x402863,panel2:0x5a3b83,sky:0x7bc8ef};
+const STORY='The real story behind this game is about 8-year-old Phileine from the Netherlands, whose Sweet Monsters drawing won a national train design contest and was turned into a real decorated train. She got to see it unveiled at a station and cut the ribbon herself. It is a joyful example of children’s creativity being taken seriously and shared with the whole public.';
+const CTA='Celebrate big imaginations — one drawing can brighten an entire journey.';
+const FACTS=['More than 1,200 children entered the drawing competition in the real story.','The winning Sweet Monsters drawing was turned into a real train that people could see at the station.'];
+const LEVELS=[
+  {name:'Platform Pop',subtitle:'Build one friendly monster face on the first train car.',target:['Goofy Eye','Frost Swirl','Goofy Eye','Smile Door'],cheer:78,smears:false,dream:false,fact:FACTS[0]},
+  {name:'Carriage Carnival',subtitle:'Stretch the monster across more cars and clean smudges.',target:['Goofy Eye','Stripe Tail','Frost Swirl','Stripe Tail','Goofy Eye','Smile Door'],cheer:74,smears:true,dream:false,fact:FACTS[1]},
+  {name:'Utrecht Unleashed',subtitle:'Finish the full Sweet Monsters train before ribbon time.',target:['Goofy Eye','Stripe Tail','Frost Swirl','Stripe Tail','Goofy Eye','Smile Door','Stripe Tail','Frost Swirl'],cheer:76,smears:true,dream:true,fact:null}
+];
+const TILE_INFO={
+  'Goofy Eye':{color:0x5B6CFF,fact:'Big simple shapes are easy to spot from far away.'},
+  'Stripe Tail':{color:0x41E2BA,fact:'Repeating patterns help separate train cars feel like one big picture.'},
+  'Frost Swirl':{color:0xFF8A5B,fact:'Curvy shapes can make a design feel playful and alive.'},
+  'Smile Door':{color:0xFFD23F,fact:'Doors and windows can become fun parts of a big picture.'},
+  'Sparkle Patch':{color:0xFF4FA3,fact:'Finishing touches can make artwork feel polished and complete.'}
+};
+const SLOT_POS=[
+  {x:112,y:230},{x:192,y:230},{x:270,y:230},{x:348,y:230},{x:428,y:230},
+  {x:112,y:388},{x:192,y:388},{x:270,y:388},{x:348,y:388},{x:428,y:388}
+];
+function roundNum(n){return Math.max(0,Math.round(n));}
+function addBadge(scene,x,y,text,fill=C.panel,textColor='#FFF4E6',width=null,depth=20,font='bold 16px "Trebuchet MS"'){
+  const t=scene.add.text(0,0,text,{font,fill:textColor,align:'center',wordWrap:width?{width:width-24}:undefined,lineSpacing:4}).setOrigin(0.5);
+  const w=width||Math.max(76,t.width+24), h=Math.max(30,t.height+14);
+  const g=scene.add.graphics();
+  g.fillStyle(fill,1).lineStyle(3,C.cream,0.95).fillRoundedRect(-w/2,-h/2,w,h,12).strokeRoundedRect(-w/2,-h/2,w,h,12);
+  return scene.add.container(x,y,[g,t]).setDepth(depth);
+}
+function addButton(scene,x,y,w,h,text,fill,textColor='#201236'){
+  const r=scene.add.rectangle(x,y,w,h,fill).setStrokeStyle(5,C.cream).setInteractive();
+  const t=scene.add.text(x,y,text,{font:'bold 22px "Trebuchet MS"',fill:textColor}).setOrigin(0.5);
+  scene.tweens.add({targets:r,scaleX:1.04,scaleY:1.04,duration:760,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+  return {rect:r,text:t};
+}
+function makeUi(scene){
+  if(scene.textures.exists('tileShell')) return;
+  const g=scene.make.graphics({x:0,y:0,add:false});
+  g.fillStyle(C.gold).fillRoundedRect(0,0,88,88,18).lineStyle(4,C.cream).strokeRoundedRect(0,0,88,88,18); g.generateTexture('tileShell',88,88); g.clear();
+  g.fillStyle(C.gold).fillTriangle(10,12,28,2,28,22).fillStyle(C.cream).fillRect(0,9,16,6); g.generateTexture('uiArrow',30,24); g.clear();
+  g.fillStyle(C.cream).fillRect(16,4,14,16).fillRect(8,18,24,20).fillRect(32,12,8,18).fillStyle(C.pink).fillRect(20,18,8,2).fillStyle(C.ink).fillRect(18,12,3,3).fillRect(25,12,3,3); g.generateTexture('uiHand',52,44); g.clear();
+  g.fillStyle(C.gold).fillRect(6,6,12,12).fillStyle(C.cream).fillRect(8,8,8,8); g.generateTexture('uiSpark',24,24); g.clear();
+  g.fillStyle(C.blue).fillCircle(26,26,22).lineStyle(4,C.cream).strokeCircle(26,26,22).fillStyle(C.cream).fillCircle(18,20,6).fillCircle(34,20,6).fillStyle(C.ink).fillCircle(18,20,3).fillCircle(34,20,3); g.generateTexture('eyeMini',52,52); g.clear();
+  g.fillStyle(C.mint).fillRect(6,12,44,10).fillRect(6,28,44,10).lineStyle(3,C.cream).strokeRect(6,12,44,10).strokeRect(6,28,44,10); g.generateTexture('stripeMini',56,48); g.clear();
+  g.fillStyle(C.orange).fillCircle(20,22,16).fillCircle(38,26,12).lineStyle(3,C.cream).strokeCircle(20,22,16).strokeCircle(38,26,12); g.generateTexture('swirlMini',56,52); g.clear();
+  g.fillStyle(C.gold).fillRoundedRect(8,8,40,40,10).lineStyle(4,C.cream).strokeRoundedRect(8,8,40,40,10).fillStyle(C.cream).fillRect(14,30,28,6); g.generateTexture('doorMini',56,56); g.clear();
+  g.fillStyle(C.pink).fillRoundedRect(8,14,40,28,12).lineStyle(4,C.cream).strokeRoundedRect(8,14,40,28,12).fillStyle(C.cream).fillCircle(18,28,4).fillCircle(38,28,4); g.generateTexture('patchMini',56,56); g.clear();
+  g.fillStyle(C.orange).fillPoints([new Phaser.Geom.Point(28,0),new Phaser.Geom.Point(34,18),new Phaser.Geom.Point(54,18),new Phaser.Geom.Point(38,30),new Phaser.Geom.Point(44,52),new Phaser.Geom.Point(28,40),new Phaser.Geom.Point(12,52),new Phaser.Geom.Point(18,30),new Phaser.Geom.Point(2,18),new Phaser.Geom.Point(22,18)],true); g.lineStyle(3,C.cream).strokePoints([new Phaser.Geom.Point(28,0),new Phaser.Geom.Point(34,18),new Phaser.Geom.Point(54,18),new Phaser.Geom.Point(38,30),new Phaser.Geom.Point(44,52),new Phaser.Geom.Point(28,40),new Phaser.Geom.Point(12,52),new Phaser.Geom.Point(18,30),new Phaser.Geom.Point(2,18),new Phaser.Geom.Point(22,18)],true,true); g.generateTexture('starMini',56,56); g.destroy();
+}
+function whiteToAlpha(scene, rawKey, outKey){
+  if(scene.textures.exists(outKey)||!scene.textures.exists(rawKey)) return;
+  const img=scene.textures.get(rawKey).getSourceImage();
+  const src=document.createElement('canvas'); src.width=img.width; src.height=img.height;
+  const ctx=src.getContext('2d',{willReadFrequently:true}); ctx.drawImage(img,0,0);
+  const data=ctx.getImageData(0,0,src.width,src.height); let minX=src.width,minY=src.height,maxX=-1,maxY=-1;
+  for(let i=0;i<data.data.length;i+=4){
+    const r=data.data[i],g=data.data[i+1],b=data.data[i+2],a=data.data[i+3],x=(i/4)%src.width,y=((i/4)/src.width)|0;
+    if(a&&r>244&&g>244&&b>244) data.data[i+3]=0;
+    else if(data.data[i+3]){ if(x<minX)minX=x; if(y<minY)minY=y; if(x>maxX)maxX=x; if(y>maxY)maxY=y; }
+  }
+  ctx.putImageData(data,0,0);
+  if(maxX<0){ scene.textures.addImage(outKey,img); return; }
+  const pad=2,w=maxX-minX+1,h=maxY-minY+1;
+  const out=document.createElement('canvas'); out.width=w+pad*2; out.height=h+pad*2;
+  out.getContext('2d').drawImage(src,minX,minY,w,h,pad,pad,w,h);
+  scene.textures.addCanvas(outKey,out);
+}
+function spr(scene,key,fb,x,y,w,h,depth=8){ const k=scene.textures.exists(key)?key:fb; return scene.add.image(x,y,k).setDisplaySize(w,h).setDepth(depth); }
+function drawStation(scene,boss=false){
+  scene.add.rectangle(CX,H/2,W,H,0x2b1d47);
+  scene.add.rectangle(CX,HUD_H/2,W,HUD_H,C.panel);
+  scene.add.rectangle(CX,H-CTRL_H/2,W,CTRL_H,C.panel);
+  scene.add.rectangle(CX,HUD_H+GAME_H/2,W,GAME_H,C.sky);
+  if(scene.textures.exists('bgMain')){
+    scene.add.image(CX,HUD_H+GAME_H/2,'bgMain').setDisplaySize(W-14,GAME_H-14).setDepth(0).setAlpha(0.8);
+    scene.add.image(CX+8,HUD_H+GAME_H/2+8,'bgMain').setDisplaySize(W-34,GAME_H-44).setDepth(0).setAlpha(0.16).setTint(boss?0xffd18c:0xfff0ca);
+  }
+  scene.add.rectangle(CX,HUD_H+GAME_H/2,W-14,GAME_H-14,C.panel2,0.12).setStrokeStyle(4,C.cream,0.34).setDepth(1);
+  const g=scene.add.graphics().setDepth(2);
+  g.fillStyle(0xe4e4ec).fillRect(20,458,500,86);
+  g.fillStyle(0x5f6582).fillRect(0,540,540,28).fillRect(0,586,540,12);
+  g.fillStyle(0xafb7d9).fillRect(40,154,460,232);
+  g.fillStyle(0xffffff).fillRect(56,190,84,154).fillRect(152,190,84,154).fillRect(248,190,84,154).fillRect(344,190,84,154).fillRect(440,190,44,154);
+  g.fillStyle(0x303a62).fillRect(90,190,18,154).fillRect(186,190,18,154).fillRect(282,190,18,154).fillRect(378,190,18,154);
+  g.fillStyle(0xffd24f).fillCircle(38,128,16).fillCircle(502,128,16);
+  scene.bgFloaters=[];
+  for(let i=0;i<14;i++){ const conf=scene.add.star(32+(i*36)%W,94+(i*58)%H,5,4,10,[C.gold,C.pink,C.mint,C.orange][i%4],0.18).setDepth(1); conf.baseX=conf.x; conf.baseY=conf.y; conf.seed=i*.74; scene.bgFloaters.push(conf); }
+}
+function animateBg(scene,t){ if(scene.bgFloaters) scene.bgFloaters.forEach((f,i)=>{ f.x=f.baseX+Math.sin(t*0.0005+f.seed)*(i%2?8:5); f.y=f.baseY+Math.cos(t*0.0004+f.seed)*(i%2?5:3); }); }
+function tileSet(level){ return level.dream ? ['Goofy Eye','Stripe Tail','Frost Swirl','Smile Door','Sparkle Patch'] : level.smears ? ['Goofy Eye','Stripe Tail','Frost Swirl','Smile Door','Sparkle Patch'] : ['Goofy Eye','Frost Swirl','Smile Door']; }
+
+class Boot extends Phaser.Scene{
+  constructor(){super('boot');}
+  preload(){
+    this.add.rectangle(CX,H/2,W,H,0x2b1d47);
+    this.add.text(CX,410,'LOADING MONSTER MURAL EXPRESS',{font:'bold 28px "Trebuchet MS"',fill:'#FFF4E6'}).setOrigin(0.5);
+    this.add.rectangle(CX,474,340,28,0x362454).setStrokeStyle(4,C.cream);
+    const bar=this.add.rectangle(CX-166,474,0,20,C.gold).setOrigin(0,0.5);
+    this.load.on('progress',v=>bar.width=332*v);
+    this.load.image('rawHero','assets/sprite-hero.png');
+    this.load.image('rawEnemy','assets/sprite-enemy.png');
+    this.load.image('rawGoal','assets/sprite-goal.png');
+    this.load.image('bgMain','assets/bg-main.png');
+  }
+  create(){ makeUi(this); whiteToAlpha(this,'rawHero','hero'); whiteToAlpha(this,'rawEnemy','enemy'); whiteToAlpha(this,'rawGoal','goal'); this.scene.start('legend'); }
+}
+
+class Legend extends Phaser.Scene{
+  constructor(){super('legend');}
+  create(){
+    drawStation(this,false);
+    spr(this,'hero','starMini',36,30,40,40,20); spr(this,'goal','starMini',74,22,26,26,20);
+    addBadge(this,CX,18,'MONSTER MURAL EXPRESS',C.panel2,'#FFF4E6',310,20,'bold 22px "Trebuchet MS"');
+    addBadge(this,CX,44,'Splash on the smiles and send a dream rolling down the rails.',0x5b3f81,'#FFF4E6',410,20,'bold 14px "Trebuchet MS"');
+    const pW=492,pH=650,pX=CX,pY=GAME_TOP+GAME_H/2-2;
+    this.add.graphics().fillStyle(C.panel,0.96).lineStyle(4,C.cream,0.95).fillRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28).strokeRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28);
+    addBadge(this,pX,pY-pH/2+32,'MONSTER FRIEND GUIDE',C.mint,'#201236',258,10,'bold 22px "Trebuchet MS"');
+    const cards=[
+      {x:pX-146,y:pY-118,type:'hero',name:'Pippa Doodlebolt',fact:'A child’s drawing inspired a real train design in the real story.'},
+      {x:pX+146,y:pY-118,type:'eye',name:'Goofy Eye',fact:'Big simple shapes are easy to spot from far away.'},
+      {x:pX-146,y:pY+78,type:'stripe',name:'Stripe Tail',fact:'Repeating patterns help separate train cars feel like one big picture.'},
+      {x:pX+146,y:pY+78,type:'patch',name:'Sparkle Patch',fact:'Finishing touches can make artwork feel polished and complete.'},
+      {x:pX-146,y:pY+244,type:'slime',name:'Smear Slime',fact:'Public art often needs teamwork to look its best.'},
+      {x:pX+146,y:pY+244,type:'star',name:'Applause Star',fact:'Shared art can make everyday places feel more joyful.'}
+    ];
+    cards.forEach((c,i)=>{
+      const w=196,h=142; this.add.graphics().fillStyle(0x2d1f4a,0.96).lineStyle(3,C.cream,0.9).fillRoundedRect(c.x-w/2,c.y-h/2,w,h,20).strokeRoundedRect(c.x-w/2,c.y-h/2,w,h,20);
+      let img;
+      if(c.type==='hero') img=spr(this,'hero','starMini',c.x,c.y-16,74,74,8);
+      else if(c.type==='eye') img=this.add.image(c.x,c.y-18,'eyeMini').setDisplaySize(60,60).setDepth(8);
+      else if(c.type==='stripe') img=this.add.image(c.x,c.y-18,'stripeMini').setDisplaySize(64,48).setDepth(8);
+      else if(c.type==='patch') img=this.add.image(c.x,c.y-18,'patchMini').setDisplaySize(62,62).setDepth(8);
+      else if(c.type==='slime') img=spr(this,'enemy','starMini',c.x,c.y-18,82,68,8);
+      else img=spr(this,'goal','starMini',c.x,c.y-18,72,72,8);
+      this.tweens.add({targets:img,scaleX:1.08,scaleY:1.08,duration:700+80*i,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+      addBadge(this,c.x,c.y+28,c.name,C.gold,'#201236',142,9,'bold 17px "Trebuchet MS"');
+      this.add.text(c.x,c.y+68,c.fact,{font:'16px "Trebuchet MS"',fill:'#FFF4E6',align:'center',wordWrap:{width:158},lineSpacing:4}).setOrigin(0.5);
+    });
+    this.hand=this.add.image(pX-146,pY-118,'uiHand').setDepth(20);
+    this.tweens.add({targets:this.hand,x:pX-40,y:pY-8,duration:1200,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    addBadge(this,CX,868,'Level 1 starts simple: drag the right monster part into the glowing train slot.',C.gold,'#201236',450,20,'bold 18px "Trebuchet MS"');
+    const btn=addButton(this,CX,920,292,64,'START DECORATING',C.gold,'#201236');
+    btn.rect.on('pointerdown',()=>this.scene.start('play',{levelIndex:0}));
+    this.input.keyboard.on('keydown-SPACE',()=>this.scene.start('play',{levelIndex:0}));
+  }
+  update(t){ animateBg(this,t); }
+}
+
+class Fact extends Phaser.Scene{
+  constructor(){super('fact');}
+  init(data){ this.info=data; }
+  create(){
+    drawStation(this,this.info.fail);
+    spr(this,'hero','starMini',36,30,40,40,20); spr(this,'goal','starMini',74,22,26,26,20);
+    addBadge(this,CX,18,this.info.fail?'TRY AGAIN':'FUN FACT CARD',this.info.fail?C.orange:C.mint,this.info.fail?'#FFF4E6':'#201236',220,20,'bold 22px "Trebuchet MS"');
+    const pW=470,pH=560,pX=CX,pY=GAME_TOP+GAME_H/2;
+    this.add.graphics().fillStyle(C.panel,0.96).lineStyle(4,C.cream,0.95).fillRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28).strokeRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28);
+    if(this.info.fail){
+      spr(this,'enemy','starMini',CX,pY-126,126,94,8);
+      addBadge(this,CX,pY-34,'The paint got too messy!',C.orange,'#FFF4E6',254,9,'bold 24px "Trebuchet MS"');
+      this.add.text(CX,pY+32,'Try again and fit the right monster parts sooner. In later levels, tap Smear Slimes before they spread across the train.',{font:'20px "Trebuchet MS"',fill:'#FFF4E6',align:'center',wordWrap:{width:392},lineSpacing:8}).setOrigin(0.5);
+    }else{
+      spr(this,'goal','starMini',CX,pY-126,118,118,8);
+      addBadge(this,CX,pY-34,'Art fact',C.gold,'#201236',160,9,'bold 24px "Trebuchet MS"');
+      this.add.text(CX,pY+16,this.info.fact,{font:'21px "Trebuchet MS"',fill:'#FFF4E6',align:'center',wordWrap:{width:396},lineSpacing:8}).setOrigin(0.5);
+      addBadge(this,CX,pY+148,`Next: ${LEVELS[this.info.next].name}`,C.mint,'#201236',240,9,'bold 20px "Trebuchet MS"');
+      this.add.text(CX,pY+196,LEVELS[this.info.next].subtitle,{font:'18px "Trebuchet MS"',fill:'#FFF4E6',align:'center',wordWrap:{width:382},lineSpacing:6}).setOrigin(0.5);
+    }
+    addBadge(this,CX,868,`Stars ${this.info.score}   Cheer ${roundNum(this.info.cheer)}%   Smears ${this.info.smears}`,C.panel2,'#FFF4E6',320,20,'bold 18px "Trebuchet MS"');
+    const btn=addButton(this,CX,920,270,64,this.info.fail?'TRY AGAIN':'NEXT LEVEL',this.info.fail?C.orange:C.gold,this.info.fail?'#FFF4E6':'#201236');
+    btn.rect.on('pointerdown',()=>this.scene.start('play',{levelIndex:this.info.fail?this.info.level:this.info.next}));
+    this.input.keyboard.on('keydown-SPACE',()=>this.scene.start('play',{levelIndex:this.info.fail?this.info.level:this.info.next}));
+  }
+  update(t){ animateBg(this,t); }
+}
+
+class End extends Phaser.Scene{
+  constructor(){super('end');}
+  create(){
+    drawStation(this,true);
+    spr(this,'hero','starMini',36,30,40,40,20); spr(this,'goal','starMini',74,22,26,26,20);
+    addBadge(this,CX,18,'THE TRAIN ROLLED OUT SMILING!',C.mint,'#201236',320,20,'bold 22px "Trebuchet MS"');
+    const pW=486,pH=664,pX=CX,pY=GAME_TOP+GAME_H/2-4;
+    this.add.graphics().fillStyle(C.panel,0.96).lineStyle(4,C.cream,0.95).fillRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28).strokeRoundedRect(pX-pW/2,pY-pH/2,pW,pH,28);
+    spr(this,'hero','starMini',CX-52,pY-pH/2+88,106,106,8);
+    spr(this,'goal','starMini',CX+64,pY-pH/2+88,112,112,8);
+    addBadge(this,CX,pY-pH/2+176,'What the real story means',C.gold,'#201236',276,9,'bold 22px "Trebuchet MS"');
+    this.add.text(CX,pY-pH/2+220,'An 8-year-old named Phileine made a Sweet Monsters drawing that won a national train design contest in the Netherlands. Her idea was turned into a real decorated train, and she got to see it unveiled at the station and cut the ribbon herself. It shows that kids’ ideas can matter in big public ways.',{font:'18px "Trebuchet MS"',fill:'#FFF4E6',align:'center',wordWrap:{width:420},lineSpacing:7}).setOrigin(0.5,0);
+    addBadge(this,CX,pY+104,'Exact story text from the brief',C.mint,'#201236',250,9,'bold 18px "Trebuchet MS"');
+    this.add.text(CX,pY+136,STORY,{font:'16px "Trebuchet MS"',fill:'#FFF4E6',align:'center',wordWrap:{width:422},lineSpacing:6}).setOrigin(0.5,0);
+    this.add.text(CX,pY+246,CTA,{font:'bold 18px "Trebuchet MS"',fill:'#FFD23F',align:'center',wordWrap:{width:414},lineSpacing:6}).setOrigin(0.5,0);
+    const btn=addButton(this,CX,920,250,64,'PLAY AGAIN',C.gold,'#201236');
+    btn.rect.on('pointerdown',()=>this.scene.start('play',{levelIndex:0}));
+    this.input.keyboard.on('keydown-SPACE',()=>this.scene.start('play',{levelIndex:0}));
+  }
+  update(t){ animateBg(this,t); }
+}
+
+class Play extends Phaser.Scene{
+  constructor(){super('play');}
+  init(data){ this.levelIndex=data.levelIndex||0; }
+  create(){
+    this.level=LEVELS[this.levelIndex];
+    this.paused=false; this.done=false; this.progress=0; this.score=0; this.smearMisses=0; this.cheer=this.level.cheer; this.dream=0;
+    this.dragTile=null; this.dragPointer=null; this.smear=null; this.guideText=''; this.guideTimer=0; this.focusIndex=0;
+    drawStation(this,this.level.dream);
+    this.makeHud(); this.makeTrain(); this.makeTray(); this.makeControls(); this.bindInput(); this.startTutorial(); this.updateTarget();
+  }
+  makeHud(){
+    spr(this,'hero','starMini',34,30,40,40,20); spr(this,'goal','starMini',74,22,26,26,20);
+    addBadge(this,CX,18,`Level ${this.levelIndex+1}: ${this.level.name}`,C.panel2,'#FFF4E6',290,20,'bold 18px "Trebuchet MS"');
+    this.topBadge=addBadge(this,CX,44,'',C.panel,'#FFF4E6',420,20,'bold 15px "Trebuchet MS"');
+    this.pauseText=this.add.text(CX,GAME_TOP+GAME_H/2,'PAUSED',{font:'bold 46px "Trebuchet MS"',fill:'#FFD23F'}).setOrigin(0.5).setDepth(40).setVisible(false);
+    this.barG=this.add.graphics().setDepth(25);
+  }
+  makeTrain(){
+    this.hero=spr(this,'hero','starMini',84,GAME_TOP+190,108,108,8);
+    this.heroLabel=addBadge(this,84,GAME_TOP+268,'PIPPA DOODLEBOLT',C.pink,'#FFF4E6',170,10,'bold 16px "Trebuchet MS"');
+    this.starGoal=spr(this,'goal','starMini',438,GAME_TOP+610,116,116,8);
+    this.starLabel=addBadge(this,438,GAME_TOP+686,'APPLAUSE STAR',C.gold,'#201236',146,10,'bold 16px "Trebuchet MS"');
+    this.slotWidgets=[];
+    this.level.target.forEach((name,i)=>{
+      const pos=SLOT_POS[i];
+      const box=this.add.rectangle(pos.x,GAME_TOP+pos.y,64,58,0xffffff,0.12).setStrokeStyle(4,C.cream,0.8).setDepth(7);
+      this.slotWidgets.push({x:pos.x,y:GAME_TOP+pos.y,name,box,filled:false});
+    });
+    this.targetBadge=addBadge(this,270,GAME_TOP+472,'',C.mint,'#201236',250,10,'bold 18px "Trebuchet MS"');
+    if(this.level.dream){
+      this.slimeBoss=spr(this,'enemy','starMini',270,GAME_TOP+108,146,96,8);
+      this.slimeLabel=addBadge(this,270,GAME_TOP+170,'SMEAR SLIME',C.orange,'#FFF4E6',140,10,'bold 16px "Trebuchet MS"');
+      this.tweens.add({targets:this.slimeBoss,angle:3,duration:240,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    }
+  }
+  makeTray(){
+    this.tiles=[]; const names=tileSet(this.level), startX=84, y=914;
+    names.forEach((name,i)=>this.tiles.push(this.makeTile(name,startX+i*94,y)));
+  }
+  makeTile(name,x,y){
+    const c=this.add.container(x,y).setDepth(18).setSize(88,88).setInteractive(new Phaser.Geom.Rectangle(-44,-44,88,88),Phaser.Geom.Rectangle.Contains);
+    const fill=TILE_INFO[name]?.color||C.gold;
+    const g=this.add.graphics(); g.fillStyle(fill,1).lineStyle(4,C.cream).fillRoundedRect(-42,-42,84,84,18).strokeRoundedRect(-42,-42,84,84,18);
+    c.add(g);
+    let img;
+    if(name==='Goofy Eye') img=this.add.image(0,-10,'eyeMini').setDisplaySize(52,52);
+    else if(name==='Stripe Tail') img=this.add.image(0,-10,'stripeMini').setDisplaySize(56,42);
+    else if(name==='Frost Swirl') img=this.add.image(0,-10,'swirlMini').setDisplaySize(56,52);
+    else if(name==='Smile Door') img=this.add.image(0,-10,'doorMini').setDisplaySize(54,54);
+    else img=this.add.image(0,-10,'patchMini').setDisplaySize(54,54);
+    c.add(img);
+    const t=this.add.text(0,20,name,{font:'bold 13px "Trebuchet MS"',fill:'#201236',align:'center',wordWrap:{width:68}}).setOrigin(0.5); c.add(t);
+    c.tileName=name; c.homeX=x; c.homeY=y; c.on('pointerdown',p=>this.startDrag(c,p)); return c;
+  }
+  makeControls(){
+    if(this.level.dream){ this.dreamBtn=addButton(this,452,846,126,56,'DREAM BURST',C.blue,'#FFF4E6'); this.dreamBtn.rect.on('pointerdown',()=>this.useDream()); }
+    this.ctrlBadge=addBadge(this,CX,846,this.level.smears?'Drag parts, then tap Smear Slimes when they pop up.':'Drag the matching part into the glowing train slot.',C.gold,'#201236',430,20,'bold 18px "Trebuchet MS"');
+  }
+  bindInput(){
+    this.input.on('pointermove',p=>this.dragMove(p));
+    this.input.on('pointerup',p=>this.endDrag(p));
+    this.input.on('pointerdown',p=>{ if(this.input.pointer1.isDown&&this.input.pointer2.isDown) this.togglePause(); if(this.smear&&Phaser.Math.Distance.Between(p.x,p.y,this.smear.x,this.smear.y)<42) this.tapSmear(); });
+    this.keys=this.input.keyboard.addKeys('LEFT,RIGHT,ENTER,SPACE,P');
+    this.input.keyboard.on('keydown-LEFT',()=>this.focusIndex=(this.focusIndex+this.tiles.length-1)%this.tiles.length);
+    this.input.keyboard.on('keydown-RIGHT',()=>this.focusIndex=(this.focusIndex+1)%this.tiles.length);
+    this.input.keyboard.on('keydown-ENTER',()=>this.placeFocused());
+    this.input.keyboard.on('keydown-SPACE',()=>this.level.dream?this.useDream():this.tapSmear());
+    this.input.keyboard.on('keydown-P',()=>this.togglePause());
+  }
+  togglePause(){ if(this.done) return; this.paused=!this.paused; this.pauseText.setVisible(this.paused); }
+  startTutorial(){
+    this.showGuide('Drag the right monster part into the first glowing train slot.',3);
+    const tile=this.tiles[0], slot=this.slotWidgets[0];
+    this.arrow=this.add.image(slot.x,slot.y-58,'uiArrow').setAngle(90).setDepth(30).setScale(1.2);
+    this.hand=this.add.image(tile.homeX,tile.homeY+74,'uiHand').setDepth(30);
+    this.tweens.add({targets:this.hand,x:slot.x,y:slot.y+56,duration:1200,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    this.tweens.add({targets:this.arrow,y:'-=14',duration:500,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    this.time.delayedCall(5000,()=>{ if(this.hand){ this.hand.destroy(); this.hand=null; } });
+    this.time.delayedCall(10000,()=>{ if(this.arrow){ this.arrow.destroy(); this.arrow=null; } });
+  }
+  showGuide(text,time=2){ this.guideText=text; this.guideTimer=time; }
+  updateTarget(){
+    const slot=this.slotWidgets[this.progress];
+    this.slotWidgets.forEach((s,i)=>s.box.setStrokeStyle(4,C.cream,i===this.progress?1:0.45));
+    this.targetBadge.list[1].setText(slot?`Next part: ${slot.name}`:'Train mural complete!');
+    if(this.arrow&&slot) this.arrow.setPosition(slot.x,slot.y-58);
+  }
+  startDrag(tile,pointer){ if(this.done||this.paused) return; this.dragTile=tile; this.dragPointer=pointer.id; tile.setDepth(30); }
+  dragMove(pointer){ if(!this.dragTile||pointer.id!==this.dragPointer) return; this.dragTile.setPosition(pointer.x,pointer.y); }
+  endDrag(pointer){
+    if(!this.dragTile||pointer.id!==this.dragPointer) return;
+    const tile=this.dragTile; this.dragTile=null; this.dragPointer=null;
+    const slot=this.slotWidgets[this.progress];
+    if(slot && Phaser.Math.Distance.Between(pointer.x,pointer.y,slot.x,slot.y)<60 && tile.tileName===slot.name){
+      tile.setPosition(slot.x,slot.y).disableInteractive().setDepth(9); slot.filled=true; slot.box.setFillStyle(TILE_INFO[slot.name].color,0.25);
+      this.progress++; this.score+=110; this.cheer=Math.min(100,this.cheer+8); this.dream=Math.min(100,this.dream+14); this.spark(slot.x,slot.y,TILE_INFO[slot.name].color); this.showGuide('Snap! That monster part looks great.',1.4);
+      if(this.level.smears && !this.smear && this.progress>=2 && this.progress%2===0) this.spawnSmear();
+      if(this.progress>=this.level.target.length && !this.smear) this.finishLevel(); else this.updateTarget();
+    }else{
+      tile.setPosition(tile.homeX,tile.homeY).setDepth(18); this.cheer=Math.max(0,this.cheer-4); this.smearMisses++; this.showGuide('That part does not fit there yet.',1.2);
+    }
+  }
+  placeFocused(){ const tile=this.tiles[this.focusIndex], slot=this.slotWidgets[this.progress]; if(tile&&slot){ if(tile.tileName===slot.name){ tile.setPosition(slot.x,slot.y); this.dragTile=tile; this.dragPointer=null; this.endDrag({id:null,x:slot.x,y:slot.y}); } else this.showGuide('That selected part is not the right match.',1.2); } }
+  spawnSmear(){
+    const slot=this.slotWidgets[Math.min(this.progress,this.slotWidgets.length-1)];
+    this.smear={x:slot.x+24,y:slot.y-26,life:5.2};
+    this.smearSprite=spr(this,'enemy','starMini',this.smear.x,this.smear.y,86,70,12);
+    this.smearArrow=this.add.image(this.smear.x,this.smear.y-54,'uiArrow').setAngle(90).setDepth(13);
+    this.tweens.add({targets:[this.smearSprite,this.smearArrow],scaleX:1.08,scaleY:1.08,duration:520,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    this.showGuide('Tap the Smear Slime before it messes up the mural!',2);
+  }
+  tapSmear(){
+    if(!this.smear||this.done||this.paused) return;
+    this.score+=140; this.cheer=Math.min(100,this.cheer+10); this.dream=Math.min(100,this.dream+10); this.spark(this.smear.x,this.smear.y,C.gold); this.clearSmear(); this.showGuide('Sparkle Patch cleaned it up!',1.5);
+    if(this.progress>=this.level.target.length) this.finishLevel();
+  }
+  clearSmear(){ if(this.smearSprite){ this.smearSprite.destroy(); this.smearSprite=null; } if(this.smearArrow){ this.smearArrow.destroy(); this.smearArrow=null; } this.smear=null; }
+  useDream(){
+    if(!this.level.dream||this.dream<100||this.done||this.paused) return;
+    this.dream=0; this.score+=220; this.cheer=Math.min(100,this.cheer+18); this.spark(CX,GAME_TOP+130,C.gold); this.showGuide('Dream Burst! A perfect monster pattern copies itself across the train.',2);
+    if(this.smear) this.tapSmear();
+    const slot=this.slotWidgets[this.progress];
+    if(slot){ const auto=this.tiles.find(t=>t.input&&t.input.enabled&&t.tileName===slot.name); if(auto){ auto.setPosition(slot.x,slot.y).disableInteractive().setDepth(9); slot.filled=true; slot.box.setFillStyle(TILE_INFO[slot.name].color,0.25); this.progress++; this.updateTarget(); } }
+    if(this.progress>=this.level.target.length && !this.smear) this.finishLevel();
+  }
+  finishLevel(){ this.done=true; this.time.delayedCall(450,()=>{ if(this.levelIndex===LEVELS.length-1) this.scene.start('end',{score:this.score}); else this.scene.start('fact',{level:this.levelIndex,next:this.levelIndex+1,score:this.score,cheer:this.cheer,smears:this.smearMisses,fact:this.level.fact,fail:false}); }); }
+  failLevel(){ this.done=true; this.scene.start('fact',{level:this.levelIndex,score:this.score,cheer:this.cheer,smears:this.smearMisses,fail:true}); }
+  spark(x,y,color){ const s=this.add.image(x,y,'uiSpark').setTint(color).setScale(0.8).setDepth(30); this.tweens.add({targets:s,scale:2.8,alpha:0,duration:240,onComplete:()=>s.destroy()}); }
+  updateHud(){
+    this.topBadge.list[1].setText(`Stars ${this.score}   Cheer ${roundNum(this.cheer)}%   Smears ${this.smearMisses}${this.level.dream?`   Dream Burst ${roundNum(this.dream)}%`:''}`);
+    this.barG.clear();
+    this.barG.fillStyle(0x201236).fillRoundedRect(12,62,516,14,7); this.barG.fillStyle(C.mint).fillRoundedRect(14,64,Math.max(6,512*this.cheer/100),10,6);
+    this.barG.fillStyle(0x201236).fillRoundedRect(12,80,516,14,7); this.barG.fillStyle(C.gold).fillRoundedRect(14,82,Math.max(0,512*(this.progress/this.level.target.length)),10,6);
+    if(this.level.dream){ this.barG.fillStyle(0x201236).fillRoundedRect(12,98,516,14,7); this.barG.fillStyle(C.blue).fillRoundedRect(14,100,Math.max(0,512*this.dream/100),10,6); }
+    if(!this.guideBadge) this.guideBadge=addBadge(this,CX,788,'',C.gold,'#201236',430,22,'bold 18px "Trebuchet MS"');
+    this.guideBadge.list[1].setText(this.guideTimer>0?this.guideText:(this.level.smears?'Drag the next part, then tap Smear Slimes if they pop up.':'Drag the matching monster part into the glowing slot.'));
+  }
+  update(time,delta){
+    animateBg(this,time);
+    if(this.done) return;
+    if(this.paused){ this.updateHud(); return; }
+    const dt=delta/1000;
+    if(this.guideTimer>0) this.guideTimer-=dt;
+    this.hero.y=GAME_TOP+190+Math.sin(time*0.008)*5;
+    this.starGoal.angle=Math.sin(time*0.006)*4;
+    if(this.slimeBoss){ this.slimeBoss.x=270+Math.sin(time*0.0035)*18; this.slimeBoss.y=GAME_TOP+108+Math.cos(time*0.0045)*6; }
+    this.cheer=Math.max(0,this.cheer-(this.level.dream?4.1:this.level.smears?3.2:2.4)*dt);
+    if(this.smear){ this.smear.life-=dt; if(this.smear.life<=0){ this.clearSmear(); this.cheer=Math.max(0,this.cheer-10); this.smearMisses++; this.showGuide('The smear spread before it got polished!',1.8); } }
+    if(this.level.dream && Math.floor(time/4600)!==Math.floor((time-delta)/4600) && !this.smear && !this.done) this.spawnSmear();
+    this.updateHud();
+    if(this.cheer<=0) this.failLevel();
+  }
+}
+
+new Phaser.Game({type:Phaser.AUTO,width:W,height:H,pixelArt:true,backgroundColor:'#2b1d47',scale:{mode:Phaser.Scale.FIT,autoCenter:Phaser.Scale.CENTER_BOTH,parent:document.body},scene:[Boot,Legend,Play,Fact,End],input:{activePointers:3},render:{pixelArt:true,roundPixels:true,antialias:false}});
+</script>
+</body>
+</html>
