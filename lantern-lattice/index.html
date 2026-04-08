@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Lantern Lattice</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Nunito:wght@600;700;800&display=swap');
+  html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#120f29;font-family:"Nunito",sans-serif}
+  body{display:flex;align-items:center;justify-content:center;overflow:hidden}
+  canvas{display:block;margin:0 !important;touch-action:none}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
+</head>
+<body>
+<script>
+const W = 540;
+const H = 960;
+const HUD_H = 82;
+const CTRL_H = 126;
+const PLAY_TOP = HUD_H + 18;
+const PLAY_BOTTOM = H - CTRL_H - 18;
+const PLAY_H = PLAY_BOTTOM - PLAY_TOP;
+const PLAY_LEFT = 18;
+const PLAY_RIGHT = W - 18;
+const COLORS = {
+  violet: 0x6C4AB6,
+  gold: 0xF6C445,
+  sky: 0x4CC9F0,
+  pink: 0xEF476F,
+  ivy: 0x2E8B57,
+  cream: 0xF3E9DC,
+  night: 0x120F29,
+  navy: 0x203352,
+  glass: 0xDDF7FF,
+  beam: 0xA3B7D0,
+  warm: 0xFFD98A,
+  text: 0x17304D,
+  panel: 0x173252,
+  teal: 0x33C6CF
+};
+
+const LEVELS = [
+  {
+    name: 'Fern Hall Flicker',
+    shots: 5,
+    targetScore: 700,
+    fact: 'Springburn Winter Gardens first opened in the 1800s and became a much-loved local landmark.',
+    knots: [{x:122,y:244},{x:414,y:226},{x:274,y:146}],
+    beams: [{x:170,y:560,w:168,h:18},{x:385,y:394,w:126,h:18},{x:114,y:300,w:18,h:120}],
+    mirrors: [{x:440,y:570,r:26}],
+    chimes: [{x:300,y:286,r:18}],
+    ivy: [{x:300,y:498},{x:206,y:208}],
+    goal: {x:274,y:102},
+    tutorial: {beam:{x:170,y:560}, knot:{x:122,y:244}}
+  },
+  {
+    name: 'Mirror Atrium',
+    shots: 6,
+    targetScore: 1100,
+    fact: 'The new plan will preserve the site as a living ruin and future event space instead of letting it disappear.',
+    knots: [{x:100,y:236},{x:438,y:232},{x:184,y:126},{x:352,y:136}],
+    beams: [{x:272,y:602,w:226,h:18},{x:114,y:422,w:18,h:118},{x:426,y:422,w:18,h:118},{x:272,y:322,w:144,h:18}],
+    mirrors: [{x:178,y:470,r:28},{x:362,y:474,r:28}],
+    chimes: [{x:272,y:224,r:18},{x:272,y:500,r:18}],
+    ivy: [{x:272,y:408},{x:272,y:158},{x:124,y:560}],
+    goal: {x:272,y:94},
+    tutorial: null
+  },
+  {
+    name: 'Grand Reopening Glow',
+    shots: 7,
+    targetScore: 1500,
+    fact: 'A living ruin can still become a lively public place again when a community refuses to give up on it.',
+    knots: [{x:92,y:254},{x:448,y:254},{x:152,y:150},{x:388,y:150},{x:272,y:212}],
+    beams: [{x:272,y:622,w:252,h:18},{x:92,y:452,w:18,h:118},{x:448,y:452,w:18,h:118},{x:178,y:336,w:122,h:18},{x:364,y:336,w:122,h:18}],
+    mirrors: [{x:156,y:520,r:26},{x:390,y:518,r:26},{x:272,y:434,r:22}],
+    chimes: [{x:102,y:122,r:16},{x:440,y:122,r:16},{x:272,y:284,r:18}],
+    ivy: [{x:272,y:546},{x:202,y:264},{x:342,y:264},{x:272,y:118}],
+    goal: {x:272,y:84},
+    tutorial: null
+  }
+];
+
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+function dist(x1,y1,x2,y2){ return Math.hypot(x2-x1,y2-y1); }
+function lerp(a,b,t){ return a + (b-a) * t; }
+function starsText(n){ return '★'.repeat(n) + '☆'.repeat(Math.max(0, 3-n)); }
+function safeUI(scene){ return scene.scene.isActive('UIScene') ? scene.scene.get('UIScene') : null; }
+
+function playTone(scene, type){
+  const ctx = scene.audioCtx || (scene.audioCtx = new (window.AudioContext || window.webkitAudioContext)());
+  if(ctx.state === 'suspended') ctx.resume();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain); gain.connect(ctx.destination);
+  const t = ctx.currentTime;
+  if(type === 'launch'){
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(280, t);
+    osc.frequency.exponentialRampToValueAtTime(620, t + 0.16);
+    gain.gain.setValueAtTime(0.17, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+  } else if(type === 'bounce'){
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(480, t);
+    osc.frequency.exponentialRampToValueAtTime(320, t + 0.08);
+    gain.gain.setValueAtTime(0.08, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.12);
+  } else if(type === 'node'){
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(420, t);
+    osc.frequency.exponentialRampToValueAtTime(960, t + 0.22);
+    gain.gain.setValueAtTime(0.18, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
+  } else if(type === 'bad'){
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(180, t);
+    osc.frequency.exponentialRampToValueAtTime(70, t + 0.25);
+    gain.gain.setValueAtTime(0.18, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.28);
+  } else if(type === 'goal'){
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(520, t);
+    osc.frequency.exponentialRampToValueAtTime(1040, t + 0.3);
+    gain.gain.setValueAtTime(0.22, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.45);
+  } else {
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(360, t);
+    gain.gain.setValueAtTime(0.1, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.14);
+  }
+  osc.start(t);
+  osc.stop(t + 0.5);
+}
+
+function makeWhiteTransparent(scene, sourceKey, targetKey){
+  const src = scene.textures.get(sourceKey).getSourceImage();
+  const tex = scene.textures.createCanvas(targetKey, src.width, src.height);
+  const ctx = tex.getContext();
+  ctx.drawImage(src, 0, 0);
+  const img = ctx.getImageData(0, 0, src.width, src.height);
+  const d = img.data;
+  for(let i=0;i<d.length;i+=4){
+    if(d[i] > 242 && d[i+1] > 242 && d[i+2] > 242) d[i+3] = 0;
+  }
+  ctx.putImageData(img, 0, 0);
+  tex.refresh();
+}
+
+function createButton(scene, x, y, w, h, label, onTap, opts = {}){
+  const shadow = scene.add.rectangle(x, y + 7, w, h, 0x08131A, 0.18);
+  const face = scene.add.rectangle(x, y, w, h, opts.fill || COLORS.gold, 1).setStrokeStyle(4, opts.stroke || COLORS.cream, 0.9).setInteractive({useHandCursor:true});
+  const shine = scene.add.rectangle(x, y - h * 0.22, w - 14, h * 0.26, 0xFFFFFF, 0.12);
+  const text = scene.add.text(x, y, label, {font:`800 ${opts.fontSize || 24}px "Baloo 2"`, fill: opts.textColor || '#17304D', align:'center'}).setOrigin(0.5);
+  const wrap = scene.add.container(0, 0, [shadow, face, shine, text]);
+  face.on('pointerdown', ()=>{
+    scene.tweens.add({targets:wrap, scaleX:0.97, scaleY:0.97, duration:70, yoyo:true});
+    if(onTap) onTap();
+  });
+  face.on('pointerover', ()=>{ face.fillColor = opts.hoverFill || 0xFFD56A; });
+  face.on('pointerout', ()=>{ face.fillColor = opts.fill || COLORS.gold; });
+  wrap.face = face; wrap.label = text;
+  return wrap;
+}
+
+function createTextures(scene){
+  if(scene.textures.exists('orb')) return;
+  const g = scene.make.graphics({x:0,y:0,add:false});
+
+  g.fillStyle(COLORS.gold).fillCircle(18,18,16);
+  g.fillStyle(0xFFF4C6).fillCircle(14,14,7);
+  g.lineStyle(4,0xFFF2B3,0.7).strokeCircle(18,18,16);
+  g.generateTexture('orb', 36, 36); g.clear();
+
+  g.fillStyle(0x2A5E7E,0.96).fillRoundedRect(0,0,96,22,10);
+  g.fillStyle(0xA7D9FF,0.28).fillRoundedRect(6,4,84,7,6);
+  g.lineStyle(4,0xE8F8FF,0.82).strokeRoundedRect(0,0,96,22,10);
+  g.generateTexture('beam', 96, 22); g.clear();
+
+  g.fillStyle(0xFFF4BF).fillCircle(22,22,18);
+  g.fillStyle(0x6C4AB6).fillCircle(22,22,10);
+  g.lineStyle(4,0xFFFFFF,0.88).strokeCircle(22,22,18);
+  g.generateTexture('mirror', 44, 44); g.clear();
+
+  g.fillStyle(0xDDF7FF).fillCircle(18,18,14);
+  g.fillStyle(COLORS.gold).fillCircle(18,18,8);
+  g.lineStyle(3,0xFFFFFF,0.9).strokeCircle(18,18,14);
+  g.generateTexture('chime', 36, 36); g.clear();
+
+  g.fillStyle(0x3B5674).fillCircle(22,22,20);
+  g.fillStyle(COLORS.gold).fillCircle(22,22,10);
+  g.lineStyle(4,0xDDF7FF,0.9).strokeCircle(22,22,20);
+  g.generateTexture('knotOff', 44, 44); g.clear();
+
+  g.fillStyle(COLORS.gold).fillCircle(22,22,20);
+  g.fillStyle(0xFFF1A8).fillCircle(18,18,7);
+  g.lineStyle(4,0xFFFFFF,0.95).strokeCircle(22,22,20);
+  g.generateTexture('knotOn', 44, 44); g.clear();
+
+  g.fillStyle(COLORS.pink).fillTriangle(8,18,34,18,21,2);
+  g.fillTriangle(8,22,34,22,21,38);
+  g.generateTexture('arrow', 42, 42); g.clear();
+
+  g.fillStyle(COLORS.cream).fillCircle(18,18,16);
+  g.fillStyle(COLORS.panel).fillRect(12,12,12,12);
+  g.generateTexture('spark', 36, 36); g.clear();
+
+  g.fillStyle(COLORS.gold).fillCircle(42,42,40);
+  g.lineStyle(5,0xFFF4C6,0.85).strokeCircle(42,42,40);
+  g.fillStyle(COLORS.navy).fillCircle(42,42,8);
+  g.generateTexture('launcherGlow', 84, 84); g.clear();
+
+  g.fillStyle(COLORS.violet).fillRoundedRect(0,0,110,110,30);
+  g.fillStyle(COLORS.gold).fillCircle(55,55,28);
+  g.fillStyle(0xFFF4C6).fillCircle(48,48,10);
+  g.lineStyle(5,0xFFFFFF,0.85).strokeCircle(55,55,28);
+  g.generateTexture('chorusBtn', 110, 110); g.destroy();
+}
+
+class BootScene extends Phaser.Scene{
+  constructor(){ super('BootScene'); }
+  preload(){
+    this.add.rectangle(W/2,H/2,W,H,COLORS.night);
+    this.add.circle(W/2,210,126,0xFFFFFF,0.08);
+    this.add.rectangle(W/2,H/2+12,404,222,0xFFFFFF,0.9).setStrokeStyle(4,COLORS.cream);
+    this.add.text(W/2,H/2-46,'LANTERN LATTICE',{font:'800 38px "Baloo 2"',fill:'#17304D'}).setOrigin(0.5);
+    this.add.text(W/2,H/2-4,'bounce light through the ruins',{font:'700 20px "Nunito"',fill:'#54697A'}).setOrigin(0.5);
+    this.bar = this.add.rectangle(90,H/2+60,0,18,COLORS.gold).setOrigin(0,0.5);
+    this.box = this.add.rectangle(W/2,H/2+60,360,24).setStrokeStyle(4,COLORS.cream);
+    this.load.on('progress', v => this.bar.width = 360 * v);
+    this.load.image('bgMain','assets/bg-main.png');
+    this.load.image('heroSource','assets/sprite-hero.png');
+    this.load.image('enemySource','assets/sprite-enemy.png');
+    this.load.image('goalSource','assets/sprite-goal.png');
+  }
+  create(){
+    createTextures(this);
+    makeWhiteTransparent(this, 'heroSource', 'hero');
+    makeWhiteTransparent(this, 'enemySource', 'ivyBlob');
+    makeWhiteTransparent(this, 'goalSource', 'heartLantern');
+    this.cameras.main.fadeIn(220,255,255,255);
+    this.time.delayedCall(340, ()=>this.scene.start('MenuScene'));
+  }
+}
+
+class MenuScene extends Phaser.Scene{
+  constructor(){ super('MenuScene'); }
+  create(){
+    const bg = this.add.image(W/2, H/2, 'bgMain').setDisplaySize(W, H);
+    this.add.rectangle(W/2,H/2,W,H,0x201845,0.38);
+    this.add.rectangle(W/2,88,310,40,0xFFFFFF,0.24).setStrokeStyle(2,COLORS.cream,0.8);
+    this.add.text(W/2,88,'GLASSHOUSE GLOW PUZZLE',{font:'800 18px "Baloo 2"',fill:'#F3E9DC'}).setOrigin(0.5);
+    this.add.text(W/2,132,'LANTERN LATTICE',{font:'800 44px "Baloo 2"',fill:'#F3E9DC'}).setOrigin(0.5);
+    this.add.text(W/2,176,'Bounce light through the ruins and make the old glass sing again.',{font:'700 20px "Nunito"',fill:'#E9F8FF',align:'center',wordWrap:{width:454}}).setOrigin(0.5);
+
+    const heroCard = this.add.graphics();
+    heroCard.fillStyle(0xFFFFFF,0.94).lineStyle(4,COLORS.cream,0.88).fillRoundedRect(36,212,468,110,28).strokeRoundedRect(36,212,468,110,28);
+    heroCard.fillStyle(0xFFFFFF,0.12).fillRoundedRect(50,226,440,18,10);
+    const ivy = this.add.image(106,266,'hero').setDisplaySize(92,92);
+    this.tweens.add({targets:ivy,y:'+=6',duration:1400,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    this.add.text(212,246,'Ivy Bellbright',{font:'800 24px "Baloo 2"',fill:'#17304D'}).setOrigin(0.5);
+    this.add.text(212,282,'Pull back, bank shots, light every Glow Knot, then wake the Heart Lantern.',{font:'700 18px "Nunito"',fill:'#617B89',wordWrap:{width:252},align:'center'}).setOrigin(0.5);
+    this.add.text(392,246,'3 LEVELS',{font:'800 22px "Baloo 2"',fill:'#6C4AB6'}).setOrigin(0.5);
+    this.add.text(392,282,'Fern Hall\nMirror Atrium\nGrand Dome',{font:'700 18px "Nunito"',fill:'#617B89',align:'center',lineSpacing:6}).setOrigin(0.5);
+
+    this.add.rectangle(W/2,560,492,414,0x08131A,0.14).setOrigin(0.5);
+    const legend = this.add.graphics();
+    legend.fillStyle(0xFFFFFF,0.94).lineStyle(4,COLORS.cream,0.88).fillRoundedRect(24,346,492,414,30).strokeRoundedRect(24,346,492,414,30);
+    legend.fillStyle(0xFFFFFF,0.12).fillRoundedRect(38,360,464,20,10);
+    this.add.text(W/2,374,'VISUAL LEGEND',{font:'800 24px "Baloo 2"',fill:'#17304D'}).setOrigin(0.5);
+    this.add.text(W/2,402,'Read this fast, then light the glasshouse.',{font:'700 18px "Nunito"',fill:'#667E8B'}).setOrigin(0.5);
+    const items = [
+      {x:152,y:480,key:'hero',scale:[80,80],name:'Ivy Bellbright',fact:'People fought for years to save the gardens.'},
+      {x:388,y:480,key:'knotOff',scale:[42,42],name:'Glow Knot',fact:'One bright spot can wake a whole room.'},
+      {x:152,y:604,key:'beam',scale:[94,22],name:'Bell Beam',fact:'Repeating metal shapes held giant glasshouses up.'},
+      {x:388,y:604,key:'ivyBlob',scale:[72,72],name:'Ivy Blob',fact:'Overgrowth can hurt old buildings if it takes over.'},
+      {x:152,y:728,key:'chime',scale:[34,34],name:'Crystal Chime',fact:'The restored space can host arts and community events.'},
+      {x:388,y:728,key:'heartLantern',scale:[72,72],name:'Heart Lantern',fact:'Shared public places help neighbors feel connected.'}
+    ];
+    items.forEach((it,i)=>{
+      this.add.graphics().fillStyle(0xF5FCFF,1).lineStyle(3,COLORS.cream,0.92).fillRoundedRect(it.x-94,it.y-48,188,106,22).strokeRoundedRect(it.x-94,it.y-48,188,106,22);
+      const img = this.add.image(it.x,it.y-10,it.key).setDisplaySize(it.scale[0], it.scale[1]);
+      this.tweens.add({targets:img,scaleX:img.scaleX*1.03,scaleY:img.scaleY*1.03,duration:1500+70*i,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+      this.add.text(it.x,it.y+22,it.name,{font:'800 18px "Baloo 2"',fill:'#17304D',align:'center',wordWrap:{width:164}}).setOrigin(0.5,0);
+      this.add.text(it.x,it.y+50,it.fact,{font:'700 17px "Nunito"',fill:'#667E8B',align:'center',wordWrap:{width:164}}).setOrigin(0.5,0);
+    });
+
+    const start = createButton(this, W/2, 842, 304, 78, 'START GLOWING', ()=>this.scene.start('GameScene',{levelIndex:0}), {fontSize:28, fill:COLORS.gold, hoverFill:0xFFD86C});
+    this.tweens.add({targets:start,scaleX:1.025,scaleY:1.025,duration:1100,yoyo:true,repeat:-1,ease:'Sine.inOut'});
+    this.add.text(W/2,902,'Drag from Ivy’s launcher • Space = Chorus Shot • Tap = mobile play',{font:'700 18px "Nunito"',fill:'#EAF8FF',align:'center',wordWrap:{width:500}}).setOrigin(0.5);
+    this.input.keyboard.on('keydown-SPACE', ()=>this.scene.start('GameScene',{levelIndex:0}));
+    this.cameras.main.fadeIn(260,255,255,255);
+  }
+}
+
+class GameScene extends Phaser.Scene{
+  constructor(){ super('GameScene'); }
+  init(data){ this.levelIndex = data.levelIndex || 0; }
+  create(){
+    this.level = LEVELS[this.levelIndex];
+    this.score = 0;
+    this.shotsLeft = this.level.shots;
+    this.nodesLit = 0;
+    this.chorusReady = false;
+    this.chorusArmed = false;
+    this.combo = 0;
+    this.isPaused = false;
+    this.levelDone = false;
+    this.activeOrbs = 0;
+    this.guideTime = 5000;
+    this.arrowTime = 10000;
+    this.physics.world.setBounds(PLAY_LEFT, PLAY_TOP, PLAY_RIGHT - PLAY_LEFT, PLAY_H);
+    this.physics.world.on('worldbounds', this.handleWorldBounce, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, ()=>this.cleanup());
+    this.events.once(Phaser.Scenes.Events.DESTROY, ()=>this.cleanup());
+
+    this.addBackground();
+    this.buildLevel();
+    this.createLauncher();
+    this.createInput();
+
+    this.scene.launch('UIScene', {levelIndex:this.levelIndex, shots:this.shotsLeft, nodesTotal:this.knots.getLength()});
+    const ui = safeUI(this);
+    if(ui) ui.renderHud(this.getHud());
+    this.startTutorialOverlay();
+    this.cameras.main.fadeIn(220,255,255,255);
+  }
+  cleanup(){
+    this.physics.world.off('worldbounds', this.handleWorldBounce, this);
+    if(this.input){ this.input.removeAllListeners(); }
+    if(this.tweens) this.tweens.killAll();
+    if(this.time) this.time.removeAllEvents();
+  }
+  addBackground(){
+    this.bg = this.add.image(W/2, H/2, 'bgMain').setDisplaySize(W, H).setDepth(-8);
+    this.add.rectangle(W/2,H/2,W,H,0x1B1637,0.18).setDepth(-7);
+    this.decor = this.add.graphics().setDepth(-6);
+    this.decor.fillStyle(0xFFFFFF,0.1).fillEllipse(120,164,180,80).fillEllipse(410,190,190,86);
+    this.decor.fillStyle(COLORS.cream,0.08).fillRect(0,HUD_H,W,26);
+    this.lights = [];
+    for(let i=0;i<12;i++){
+      const x = 54 + i * 38;
+      const bulb = this.add.circle(x, PLAY_TOP + 8 + (i % 2) * 10, 5, i % 3 ? COLORS.gold : COLORS.sky, 0.8).setDepth(-5);
+      this.add.rectangle(x, PLAY_TOP - 6, 2, 22, 0xEAF8FF, 0.24).setDepth(-5);
+      this.tweens.add({targets:bulb, alpha:0.25, duration:700 + i*60, yoyo:true, repeat:-1, ease:'Sine.inOut'});
+      this.lights.push(bulb);
+    }
+  }
+  buildLevel(){
+    this.orbs = this.physics.add.group({allowGravity:false,collideWorldBounds:true,bounceX:1,bounceY:1});
+    this.beams = this.physics.add.staticGroup();
+    this.mirrors = this.physics.add.staticGroup();
+    this.chimes = this.physics.add.staticGroup();
+    this.knots = this.physics.add.staticGroup();
+    this.ivies = this.physics.add.staticGroup();
+
+    this.level.beams.forEach(cfg=>{
+      const beam = this.beams.create(cfg.x, cfg.y, 'beam').setDisplaySize(cfg.w, cfg.h).refreshBody().setDepth(3);
+      beam.body.setSize(cfg.w, cfg.h, true);
+      beam.flash = this.add.rectangle(cfg.x, cfg.y, cfg.w+10, cfg.h+10, 0xFFFFFF, 0).setDepth(2);
+    });
+    this.level.mirrors.forEach(cfg=>{
+      const m = this.mirrors.create(cfg.x, cfg.y, 'mirror').setDisplaySize(cfg.r*2, cfg.r*2).refreshBody().setDepth(4);
+      m.body.setCircle(cfg.r, (m.width - cfg.r*2)/2, (m.height - cfg.r*2)/2);
+    });
+    this.level.chimes.forEach(cfg=>{
+      const c = this.chimes.create(cfg.x, cfg.y, 'chime').setDisplaySize(cfg.r*2, cfg.r*2).refreshBody().setDepth(5);
+      c.body.setCircle(cfg.r, (c.width - cfg.r*2)/2, (c.height - cfg.r*2)/2);
+      c.hit = false;
+      this.tweens.add({targets:c, y:'+=4', duration:1300, yoyo:true, repeat:-1, ease:'Sine.inOut'});
+    });
+    this.level.knots.forEach(cfg=>{
+      const k = this.knots.create(cfg.x, cfg.y, 'knotOff').setDisplaySize(46,46).refreshBody().setDepth(5);
+      k.body.setCircle(20, 2, 2);
+      k.lit = false;
+    });
+    this.level.ivy.forEach(cfg=>{
+      const ivy = this.ivies.create(cfg.x, cfg.y, 'ivyBlob').setDisplaySize(82,82).refreshBody().setDepth(4);
+      ivy.body.setCircle(26, 15, 15);
+      ivy.cleared = false;
+    });
+
+    this.goalGlow = this.add.circle(this.level.goal.x, this.level.goal.y, 42, COLORS.gold, 0.1).setDepth(4);
+    this.goal = this.physics.add.staticImage(this.level.goal.x, this.level.goal.y, 'heartLantern').setDisplaySize(94,94).setDepth(6);
+    this.goal.body.setCircle(28, 19, 19);
+    this.goal.setAlpha(0.55);
+    this.tweens.add({targets:this.goalGlow, scale:1.1, alpha:0.24, duration:1400, yoyo:true, repeat:-1, ease:'Sine.inOut'});
+
+    this.physics.add.collider(this.orbs, this.beams, this.handleOrbBounce, null, this);
+    this.physics.add.collider(this.orbs, this.mirrors, this.handleOrbBounce, null, this);
+    this.physics.add.collider(this.orbs, this.chimes, this.hitChime, null, this);
+    this.physics.add.overlap(this.orbs, this.knots, this.hitKnot, null, this);
+    this.physics.add.overlap(this.orbs, this.ivies, this.hitIvy, null, this);
+    this.physics.add.overlap(this.orbs, this.goal, this.hitGoal, null, this);
+  }
+  createLauncher(){
+    this.launcherX = W/2;
+    this.launcherY = PLAY_BOTTOM - 12;
+    this.heroShadow = this.add.ellipse(this.launcherX, H-92, 132, 30, 0x08131A, 0.22).setDepth(6);
+    this.hero = this.add.image(this.launcherX, H-78, 'hero').setDisplaySize(114,114).setDepth(8);
+    this.launchGlow = this.add.image(this.launcherX, this.launcherY, 'launcherGlow').setDepth(7).setScale(0.92);
+    this.launchPad = this.add.circle(this.launcherX, this.launcherY, 22, COLORS.gold, 0.92).setDepth(9).setStrokeStyle(4, COLORS.cream, 0.85);
+    this.aimer = this.add.graphics().setDepth(11);
+    this.aiming = false;
+    this.dragPoint = new Phaser.Math.Vector2(this.launcherX, this.launcherY - 80);
+    this.tweens.add({targets:this.launchGlow, scale:1.03, alpha:0.7, duration:1200, yoyo:true, repeat:-1, ease:'Sine.inOut'});
+  }
+  createInput(){
+    this.input.on('pointerdown', p=>{
+      if(this.isPaused || this.levelDone || this.activeOrbs > 0 || this.shotsLeft <= 0) return;
+      if(p.y < HUD_H) return;
+      if(dist(p.x,p.y,this.launcherX,this.launcherY) > 180) return;
+      this.aiming = true;
+      this.dragPoint.set(p.x,p.y);
+    });
+    this.input.on('pointermove', p=>{
+      if(this.aiming) this.dragPoint.set(p.x,p.y);
+    });
+    this.input.on('pointerup', ()=>{
+      if(!this.aiming) return;
+      this.aiming = false;
+      this.fireShot();
+    });
+    this.input.keyboard.on('keydown-R', ()=>this.restartLevel());
+    this.input.keyboard.on('keydown-SPACE', ()=>this.armChorus());
+    this.input.keyboard.on('keydown-ESC', ()=>this.togglePause());
+  }
+  armChorus(){
+    if(!this.chorusReady || this.activeOrbs > 0 || this.levelDone) return;
+    this.chorusArmed = !this.chorusArmed;
+    const ui = safeUI(this);
+    if(ui) ui.setChorusArmed(this.chorusArmed);
+    if(ui) ui.showToast(this.chorusArmed ? 'Chorus Shot ready!' : 'Chorus Shot canceled.');
+  }
+  togglePause(){
+    if(this.levelDone) return;
+    this.isPaused = !this.isPaused;
+    this.physics.world.isPaused = this.isPaused;
+    const ui = safeUI(this);
+    if(ui) ui.togglePause(this.isPaused);
+  }
+  restartLevel(){
+    if(this.scene.isActive('UIScene')) this.scene.stop('UIScene');
+    this.scene.restart({levelIndex:this.levelIndex});
+  }
+  getHud(){
+    return {
+      shots:this.shotsLeft,
+      totalShots:this.level.shots,
+      score:this.score,
+      nodesLit:this.nodesLit,
+      nodesTotal:this.knots.getLength(),
+      chorusReady:this.chorusReady,
+      chorusArmed:this.chorusArmed,
+      paused:this.isPaused
+    };
+  }
+  refreshHud(){ const ui = safeUI(this); if(ui) ui.renderHud(this.getHud()); }
+  startTutorialOverlay(){
+    this.hand = this.add.container(0,0).setDepth(12);
+    const palm = this.add.circle(0,0,18,0xFFF6D8,0.95);
+    const finger = this.add.rectangle(12,-18,16,34,0xFFF6D8,0.95);
+    finger.setStrokeStyle(2,0xD3BCA0,0.8);
+    this.hand.add([palm,finger]);
+    this.hand.setVisible(this.levelIndex === 0);
+    this.arrowBeam = this.add.image(this.level.tutorial ? this.level.tutorial.beam.x : -100, this.level.tutorial ? this.level.tutorial.beam.y-34 : -100, 'arrow').setDepth(12).setScale(0.88).setVisible(this.levelIndex===0);
+    this.arrowKnot = this.add.image(this.level.tutorial ? this.level.tutorial.knot.x : -100, this.level.tutorial ? this.level.tutorial.knot.y-42 : -100, 'arrow').setDepth(12).setScale(0.88).setVisible(this.levelIndex===0);
+    this.arrowKnot.setAngle(180);
+  }
+  fireShot(){
+    const drag = new Phaser.Math.Vector2(this.launcherX - this.dragPoint.x, this.launcherY - this.dragPoint.y);
+    const power = clamp(drag.length(), 36, 170);
+    if(power < 28) return;
+    drag.normalize();
+    this.shotsLeft--;
+    const orb = this.orbs.create(this.launcherX, this.launcherY - 6, 'orb').setCircle(18).setDepth(10);
+    orb.body.setCircle(12, 6, 6);
+    orb.body.setBounce(1,1);
+    orb.body.onWorldBounds = true;
+    orb.body.setVelocity(drag.x * (150 + power*2.1), drag.y * (150 + power*2.1));
+    orb.life = 8.5;
+    orb.firstBounce = false;
+    orb.canSplit = this.chorusArmed;
+    orb.isMini = false;
+    orb.hitMemory = {};
+    this.chorusArmed = false;
+    this.chorusReady = false;
+    this.activeOrbs++;
+    playTone(this, 'launch');
+    this.tweens.add({targets:this.hero, angle:-10, duration:80, yoyo:true});
+    const ui = safeUI(this);
+    if(ui){ ui.bumpShots(); ui.setChorusArmed(false); }
+    this.refreshHud();
+  }
+  handleWorldBounce(body){
+    const orb = body.gameObject;
+    if(!orb || !orb.active) return;
+    this.handleBounceLogic(orb, null);
+  }
+  handleOrbBounce(orb, target){
+    if(target && target.flash){
+      target.flash.alpha = 0.55;
+      this.tweens.add({targets:target.flash, alpha:0, duration:180});
+    }
+    this.handleBounceLogic(orb, target);
+  }
+  handleBounceLogic(orb){
+    if(!orb || !orb.active) return;
+    playTone(this, 'bounce');
+    orb.firstBounce = true;
+    if(orb.canSplit && !orb.splitDone){
+      orb.splitDone = true;
+      this.time.delayedCall(40, ()=>this.splitOrb(orb));
+    }
+  }
+  splitOrb(orb){
+    if(!orb || !orb.active) return;
+    const speed = Math.max(180, orb.body.velocity.length());
+    const base = orb.body.velocity.clone().normalize();
+    const angles = [-0.45, 0, 0.45];
+    angles.forEach((a,idx)=>{
+      if(idx === 1){
+        orb.body.setVelocity(base.x * speed, base.y * speed);
+        orb.isMini = true;
+        orb.setScale(0.82);
+        return;
+      }
+      const v = base.clone().rotate(a).scale(speed * 0.88);
+      const mini = this.orbs.create(orb.x, orb.y, 'orb').setDepth(10).setScale(0.82);
+      mini.body.setCircle(12, 6, 6);
+      mini.body.setBounce(1,1);
+      mini.body.onWorldBounds = true;
+      mini.body.setVelocity(v.x, v.y);
+      mini.life = 5.5;
+      mini.firstBounce = true;
+      mini.canSplit = false;
+      mini.splitDone = true;
+      mini.isMini = true;
+      mini.hitMemory = {};
+      this.activeOrbs++;
+    });
+    playTone(this, 'node');
+    const ui = safeUI(this); if(ui) ui.showToast('Chorus burst!');
+  }
+  hitKnot(orb, knot){
+    if(knot.lit) return;
+    knot.lit = true;
+    knot.setTexture('knotOn');
+    this.nodesLit++;
+    this.score += 120 + this.combo * 10;
+    this.combo++;
+    playTone(this, 'node');
+    this.spawnBurst(knot.x, knot.y, 10, 0xFFF4B3);
+    this.tweens.add({targets:knot, scaleX:1.18, scaleY:1.18, duration:120, yoyo:true, ease:'Back.out'});
+    const ui = safeUI(this); if(ui){ ui.popScore(); ui.flashNodes(); }
+    if(this.nodesLit >= this.knots.getLength()){
+      this.goal.setAlpha(1);
+      this.goalGlow.setFillStyle(COLORS.gold,0.28);
+      if(ui) ui.showToast('Heart Lantern is ready!');
+    }
+    this.refreshHud();
+  }
+  hitChime(orb, chime){
+    if(!chime.hit){
+      chime.hit = true;
+      this.score += 80;
+      this.chorusReady = true;
+      playTone(this, 'node');
+      this.spawnBurst(chime.x, chime.y, 8, 0xBEEFFF);
+      const ui = safeUI(this);
+      if(ui){ ui.setChorusReady(true); ui.popScore(); ui.showToast('Crystal Chime charged Chorus Shot!'); }
+      this.refreshHud();
+    }
+    this.handleBounceLogic(orb, null);
+  }
+  hitIvy(orb, ivy){
+    if(ivy.cleared) return;
+    ivy.cleared = true;
+    this.score += 40;
+    playTone(this, 'bad');
+    this.cameras.main.shake(140, 0.008);
+    this.spawnBurst(ivy.x, ivy.y, 12, 0x79D28A);
+    ivy.disableBody(true, true);
+    orb.body.velocity.scale(0.68);
+    this.tweens.add({targets:this.hero, angle:-8, duration:80, yoyo:true});
+    const ui = safeUI(this); if(ui) ui.showToast('Ivy cleared!');
+    this.refreshHud();
+  }
+  hitGoal(orb, goal){
+    if(this.nodesLit < this.knots.getLength() || this.levelDone) return;
+    this.levelDone = true;
+    this.score += 250 + this.shotsLeft * 60;
+    playTone(this, 'goal');
+    this.cameras.main.flash(260,255,240,180);
+    this.spawnBurst(goal.x, goal.y, 18, 0xFFEBA8);
+    this.tweens.add({targets:this.hero, angle:18, duration:180, yoyo:true, repeat:2});
+    const ui = safeUI(this);
+    const summary = {
+      title: this.level.name + ' relit!',
+      stars: clamp(1 + (this.shotsLeft >= 2 ? 1 : 0) + (this.level.ivy.length === 0 || this.ivies.countActive(false) >= this.level.ivy.length ? 1 : 0), 1, 3),
+      body: `You woke ${this.nodesLit} Glow Knots and still had ${this.shotsLeft} shot${this.shotsLeft===1?'':'s'} left.`
+    };
+    if(ui){
+      ui.showSummary(summary);
+      const buttonLabel = this.levelIndex < 2 ? 'FUN FACT' : 'FINAL STORY';
+      this.time.delayedCall(1550, ()=>ui.showFactCard(this.levelIndex < 2 ? 'Between chambers' : 'The real story', this.level.fact, buttonLabel, ()=>this.advanceLevel()));
+    } else {
+      this.time.delayedCall(1800, ()=>this.advanceLevel());
+    }
+  }
+  advanceLevel(){
+    if(this.scene.isActive('UIScene')) this.scene.stop('UIScene');
+    if(this.levelIndex < 2) this.scene.restart({levelIndex:this.levelIndex + 1});
+    else this.scene.start('WinScene', {score:this.score, totalStars:LEVELS.length * 3, story:this.level.fact});
+  }
+  spawnBurst(x,y,count,color){
+    for(let i=0;i<count;i++){
+      const p = this.add.image(x, y, 'spark').setTint(color).setDepth(13).setScale(0.4 + Math.random() * 0.3);
+      this.tweens.add({targets:p, x:x + Phaser.Math.Between(-70,70), y:y + Phaser.Math.Between(-70,70), alpha:0, scale:0.1, duration:300 + Math.random()*220, onComplete:()=>p.destroy()});
+    }
+  }
+  removeOrb(orb){
+    if(!orb || !orb.active) return;
+    orb.disableBody(true, true);
+    this.activeOrbs = Math.max(0, this.activeOrbs - 1);
+    if(this.activeOrbs === 0 && !this.levelDone && this.shotsLeft <= 0 && this.nodesLit < this.knots.getLength()){
+      this.failLevel();
+    }
+  }
+  failLevel(){
+    if(this.levelDone) return;
+    this.levelDone = true;
+    playTone(this, 'bad');
+    this.cameras.main.shake(220,0.014);
+    this.tweens.add({targets:this.hero, angle:-18, duration:120, yoyo:true, repeat:2});
+    this.time.delayedCall(760, ()=>{
+      if(this.scene.isActive('UIScene')) this.scene.stop('UIScene');
+      this.scene.start('GameOverScene', {score:this.score, levelIndex:this.levelIndex});
+    });
+  }
+  update(time, delta){
+    if(this.isPaused || this.levelDone) return;
+    const dt = delta / 1000;
+    if(this.aiming) this.drawAimPreview(); else this.aimer.clear();
+
+    this.orbs.children.iterate(orb=>{
+      if(!orb || !orb.body) return;
+      orb.life -= dt;
+      if(orb.life <= 0 || orb.body.velocity.length() < 40){ this.removeOrb(orb); }
+    });
+
+    if(this.levelIndex === 0){
+      this.guideTime -= delta;
+      this.arrowTime -= delta;
+      if(this.hand && this.hand.active){
+        const t = time * 0.0014;
+        this.hand.setVisible(this.guideTime > 0);
+        this.hand.setPosition(this.launcherX - 26 + Math.sin(t)*34, this.launcherY - 66 - Math.cos(t)*24);
+      }
+      if(this.arrowBeam){
+        const v = this.arrowTime > 0;
+        this.arrowBeam.setVisible(v);
+        this.arrowKnot.setVisible(v);
+        this.arrowBeam.y = this.level.tutorial.beam.y - 34 + Math.sin(time*0.008) * 8;
+        this.arrowKnot.y = this.level.tutorial.knot.y - 42 + Math.sin(time*0.008 + 0.8) * 8;
+      }
+    }
+  }
+  drawAimPreview(){
+    this.aimer.clear();
+    const drag = new Phaser.Math.Vector2(this.launcherX - this.dragPoint.x, this.launcherY - this.dragPoint.y);
+    const len = clamp(drag.length(), 0, 170);
+    if(len < 18) return;
+    drag.normalize().scale(9);
+    let px = this.launcherX;
+    let py = this.launcherY;
+    let vx = drag.x;
+    let vy = drag.y;
+    for(let i=0;i<34;i++){
+      px += vx;
+      py += vy;
+      if(px < PLAY_LEFT + 12 || px > PLAY_RIGHT - 12) vx *= -1;
+      if(py < PLAY_TOP + 12 || py > PLAY_BOTTOM - 12) vy *= -1;
+      const alpha = 0.52 - i * 0.012;
+      this.aimer.fillStyle(i < 4 ? COLORS.gold : COLORS.sky, Math.max(0.08, alpha)).fillCircle(px, py, i < 4 ? 5 : 4);
+    }
+  }
+}
+
+class UIScene extends Phaser.Scene{
+  constructor(){ super('UIScene'); }
+  init(data){ this.levelIndex = data.levelIndex || 0; this.totalNodes = data.nodesTotal || 0; this.totalShots = data.shots || 0; }
+  create(){
+    this.gameScene = this.scene.get('GameScene');
+    this.hudG = this.add.graphics();
+    this.modal = this.add.container(0,0).setDepth(40).setVisible(false);
+    this.pauseOverlay = this.add.graphics().setDepth(35);
+
+    this.shotsText = this.add.text(88,28,'SHOTS '+this.totalShots,{font:'800 24px "Baloo 2"',fill:'#F3E9DC'}).setOrigin(0.5);
+    this.nodeText = this.add.text(W/2,28,'KNOTS 0/'+this.totalNodes,{font:'800 22px "Baloo 2"',fill:'#F3E9DC'}).setOrigin(0.5);
+    this.scoreText = this.add.text(W-88,28,'0',{font:'800 24px "Baloo 2"',fill:'#F3E9DC'}).setOrigin(0.5);
+    this.levelText = this.add.text(W/2,58,LEVELS[this.levelIndex].name,{font:'700 18px "Nunito"',fill:'#DDF7FF'}).setOrigin(0.5);
+    this.toastBack = this.add.rectangle(W/2, H-144, 416, 44, 0x173252, 0.74).setStrokeStyle(2,0xDDF7FF,0.36).setAlpha(0);
+    this.toast = this.add.text(W/2, H-144, '', {font:'800 20px "Baloo 2"', fill:'#FFD98A', align:'center', wordWrap:{width:388}}).setOrigin(0.5).setAlpha(0);
+
+    this.chorusBtn = this.add.image(W-74, H-64, 'chorusBtn').setDepth(6).setScale(0.72).setInteractive();
+    this.chorusGlow = this.add.circle(W-74, H-64, 42, COLORS.gold, 0.18).setDepth(5).setScale(1);
+    this.chorusLabel = this.add.text(W-74, H-24, 'CHORUS',{font:'800 18px "Baloo 2"',fill:'#F3E9DC'}).setOrigin(0.5);
+    this.pauseBtn = createButton(this, 54, H-64, 82, 58, 'PAUSE', ()=>this.gameScene.togglePause(), {fontSize:20, fill:COLORS.pink, hoverFill:0xFF648D, textColor:'#FFFFFF', stroke:0xFFFFFF});
+    this.pauseBtn.setDepth(7);
+    this.helpText = this.add.text(176, H-68, 'Drag from Ivy to aim. Tap Chorus when it glows.', {font:'700 18px "Nunito"',fill:'#DDF7FF',wordWrap:{width:220}}).setOrigin(0,0.5);
+
+    this.chorusBtn.on('pointerdown', ()=>this.gameScene.armChorus());
+    this.gameScene.events.on('shutdown', ()=>this.cleanup(), this);
+    this.hudIntro();
+    this.renderHud(this.gameScene.getHud());
+  }
+  cleanup(){ if(this.gameScene) this.gameScene.events.off('shutdown', this.cleanup, this); }
+  hudIntro(){ this.tweens.add({targets:[this.shotsText,this.nodeText,this.scoreText,this.levelText], y:'+=14', duration:420, yoyo:true, ease:'Back.out'}); }
+  renderHud(d){
+    this.hudG.clear();
+    this.hudG.fillStyle(0x10243C,0.74).fillRoundedRect(10,8,W-20,58,20);
+    this.hudG.fillStyle(0xFFFFFF,0.09).fillRoundedRect(20,14,W-40,12,8);
+    this.shotsText.setText('SHOTS ' + d.shots + '/' + (d.totalShots || this.totalShots));
+    this.nodeText.setText('KNOTS ' + d.nodesLit + '/' + (d.nodesTotal || this.totalNodes));
+    this.scoreText.setText('SCORE '+d.score);
+    this.levelText.setText(LEVELS[this.levelIndex].name);
+    this.chorusBtn.setTint(d.chorusReady ? 0xFFFFFF : 0x8D8AA3);
+    this.chorusGlow.setVisible(d.chorusReady).setScale(d.chorusArmed ? 1.14 : 1);
+    this.chorusLabel.setText(d.chorusArmed ? 'ARMED' : 'CHORUS').setFill(d.chorusReady ? '#F3E9DC' : '#B4B2C0');
+    if(d.paused) this.showToast('Paused');
+  }
+  bumpShots(){ this.tweens.add({targets:this.shotsText, scaleX:1.12, scaleY:1.12, duration:90, yoyo:true, ease:'Back.out'}); }
+  popScore(){ this.tweens.add({targets:this.scoreText, scaleX:1.12, scaleY:1.12, duration:90, yoyo:true, ease:'Back.out'}); }
+  flashNodes(){ this.tweens.add({targets:this.nodeText, scaleX:1.12, scaleY:1.12, duration:90, yoyo:true, ease:'Back.out'}); }
+  setChorusReady(v){ this.renderHud(this.gameScene.getHud()); if(v) this.showToast('Chorus Shot charged!'); }
+  setChorusArmed(v){ this.renderHud(this.gameScene.getHud()); }
+  showToast(msg){
+    this.toastBack.alpha = 1;
+    this.toast.alpha = 1;
+    this.toast.setText(msg);
+    this.tweens.killTweensOf([this.toastBack, this.toast]);
+    this.tweens.add({targets:[this.toastBack,this.toast], alpha:0, duration:1300, delay:820});
+  }
+  showSummary(summary){
+    this.modal.removeAll(true);
+    const shadow = this.add.rectangle(W/2, H/2+8, 400, 214, 0x08131A, 0.2);
+    const card = this.add.rectangle(W/2, H/2, 400, 214, 0x173252, 0.95).setStrokeStyle(4, COLORS.cream, 0.88);
+    const shine = this.add.rectangle(W/2, H/2-86, 338, 18, 0xFFFFFF, 0.08);
+    const title = this.add.text(W/2, H/2-62, summary.title, {font:'800 28px "Baloo 2"',fill:'#F3E9DC'}).setOrigin(0.5);
+    const stars = this.add.text(W/2, H/2-12, starsText(summary.stars), {font:'800 34px "Baloo 2"',fill:'#FFD98A'}).setOrigin(0.5);
+    const body = this.add.text(W/2, H/2+42, summary.body, {font:'700 20px "Nunito"',fill:'#DDF7FF',align:'center',wordWrap:{width:330}}).setOrigin(0.5);
+    this.modal.add([shadow,card,shine,title,stars,body]);
+    this.modal.setVisible(true).setAlpha(0);
+    this.tweens.add({targets:this.modal, alpha:1, duration:180});
+  }
+  showFactCard(title, body, buttonText, onContinue){
+    this.modal.removeAll(true);
+    const shadow = this.add.rectangle(W/2, H/2+8, 430, 280, 0x08131A, 0.2);
+    const card = this.add.rectangle(W/2, H/2, 430, 280, 0x173252, 0.96).setStrokeStyle(4, COLORS.cream, 0.9);
+    const shine = this.add.rectangle(W/2, H/2-116, 366, 18, 0xFFFFFF, 0.08);
+    const heading = this.add.text(W/2, H/2-102, title, {font:'800 28px "Baloo 2"',fill:'#F3E9DC'}).setOrigin(0.5);
+    const copy = this.add.text(W/2, H/2-18, body, {font:'700 22px "Nunito"',fill:'#DDF7FF',align:'center',wordWrap:{width:360},lineSpacing:8}).setOrigin(0.5);
+    const btn = createButton(this, W/2, H/2+86, 220, 62, buttonText, ()=>{ this.modal.setVisible(false); if(onContinue) onContinue(); }, {fontSize:24, fill:COLORS.gold, hoverFill:0xFFD86C});
+    this.modal.add([shadow,card,shine,heading,copy,btn]);
+    this.modal.setVisible(true).setAlpha(0);
+    this.tweens.add({targets:this.modal, alpha:1, duration:180});
+  }
+  togglePause(v){
+    this.pauseOverlay.clear();
+    if(v){
+      this.pauseOverlay.fillStyle(0x08131A,0.44).fillRect(0,HUD_H,W,PLAY_H);
+      this.showFactCard('Paused','Take a breath, line up your next bank shot, then jump back in.','RESUME', ()=>this.gameScene.togglePause());
+    } else {
+      this.modal.setVisible(false);
+    }
+  }
+}
+
+class WinScene extends Phaser.Scene{
+  constructor(){ super('WinScene'); }
+  init(data){ this.dataIn = data || {}; }
+  create(){
+    this.add.image(W/2,H/2,'bgMain').setDisplaySize(W,H);
+    this.add.rectangle(W/2,H/2,W,H,0x151038,0.32);
+    this.add.circle(W/2,174,130,0xFFFFFF,0.12);
+    const hero = this.add.image(W/2,210,'hero').setDisplaySize(152,152);
+    this.tweens.add({targets:hero, angle:10, duration:420, yoyo:true, repeat:-1});
+    this.add.text(W/2,94,'GRAND REOPENING!',{font:'800 42px "Baloo 2"',fill:'#F3E9DC'}).setOrigin(0.5);
+    this.add.text(W/2,136,'The old glasshouse glows again.',{font:'700 22px "Nunito"',fill:'#EAF8FF'}).setOrigin(0.5);
+    this.add.rectangle(W/2,292,240,40,0xFFFFFF,0.24).setStrokeStyle(2,COLORS.cream,0.8);
+    this.add.text(W/2,292,'SCORE '+(this.dataIn.score || 0),{font:'800 20px "Baloo 2"',fill:'#17304D'}).setOrigin(0.5);
+
+    this.add.rectangle(W/2,552,484,372,0x08131A,0.12).setOrigin(0.5);
+    const card = this.add.graphics();
+    card.fillStyle(0xFFFFFF,0.95).lineStyle(4,COLORS.cream,0.9).fillRoundedRect(28,366,484,372,30).strokeRoundedRect(28,366,484,372,30);
+    card.fillStyle(0xFFFFFF,0.14).fillRoundedRect(42,380,456,18,10);
+    this.add.text(W/2,398,'The real story',{font:'800 26px "Baloo 2"',fill:'#17304D'}).setOrigin(0.5);
+    this.add.text(W/2,488,'Springburn Winter Gardens in Glasgow is a huge historic glasshouse that looked lost for years. Local people kept speaking up for it, and new funding means it can be made safe, kept as a living ruin, and reopened for art and community events.',{font:'700 20px "Nunito"',fill:'#5E7686',align:'center',wordWrap:{width:404},lineSpacing:8}).setOrigin(0.5);
+    this.add.text(W/2,620,'Communities can bring beloved places back to life.',{font:'800 22px "Baloo 2"',fill:'#6C4AB6',align:'center',wordWrap:{width:390}}).setOrigin(0.5);
+    const btn = createButton(this, W/2, 836, 286, 78, 'PLAY AGAIN', ()=>this.scene.start('MenuScene'), {fontSize:28});
+    this.tweens.add({targets:btn, scaleX:1.02, scaleY:1.02, duration:1100, yoyo:true, repeat:-1, ease:'Sine.inOut'});
+    this.cameras.main.flash(240,255,255,255);
+  }
+}
+
+class GameOverScene extends Phaser.Scene{
+  constructor(){ super('GameOverScene'); }
+  init(data){ this.dataIn = data || {}; }
+  create(){
+    this.add.image(W/2,H/2,'bgMain').setDisplaySize(W,H);
+    this.add.rectangle(W/2,H/2,W,H,0x08131A,0.4);
+    const ivy = this.add.image(W/2,258,'hero').setDisplaySize(148,148).setAngle(180);
+    this.tweens.add({targets:ivy, angle:184, duration:340, yoyo:true, repeat:2});
+    this.add.text(W/2,104,'LIGHTS OUT',{font:'800 42px "Baloo 2"',fill:'#F3E9DC'}).setOrigin(0.5);
+    this.add.text(W/2,150,'The chamber is still dark. One more try can wake it up.',{font:'700 22px "Nunito"',fill:'#EAF8FF',align:'center',wordWrap:{width:440}}).setOrigin(0.5);
+    this.add.rectangle(W/2,520,470,228,0x08131A,0.12).setOrigin(0.5);
+    const card = this.add.graphics();
+    card.fillStyle(0xFFFFFF,0.95).lineStyle(4,COLORS.cream,0.88).fillRoundedRect(35,408,470,228,30).strokeRoundedRect(35,408,470,228,30);
+    card.fillStyle(0xFFFFFF,0.14).fillRoundedRect(49,422,442,18,10);
+    this.add.text(W/2,442,'BEST NEXT MOVE',{font:'800 24px "Baloo 2"',fill:'#17304D'}).setOrigin(0.5);
+    this.add.text(W/2,520,'Use a shorter pull, bank off the wide Bell Beam first, then save Chorus Shot for clustered targets.',{font:'700 20px "Nunito"',fill:'#5E7686',align:'center',wordWrap:{width:402},lineSpacing:8}).setOrigin(0.5);
+    this.add.text(W/2,586,'Score '+(this.dataIn.score || 0),{font:'800 22px "Baloo 2"',fill:'#6C4AB6'}).setOrigin(0.5);
+    const again = createButton(this, W/2, 770, 286, 76, 'TRY AGAIN', ()=>this.scene.start('GameScene',{levelIndex:this.dataIn.levelIndex || 0}), {fontSize:28});
+    const menu = createButton(this, W/2, 854, 230, 58, 'MENU', ()=>this.scene.start('MenuScene'), {fontSize:24, fill:0x88CF6F, hoverFill:0xA8E389});
+    this.tweens.add({targets:again, scaleX:1.02, scaleY:1.02, duration:1100, yoyo:true, repeat:-1, ease:'Sine.inOut'});
+    this.cameras.main.fadeIn(220,255,255,255);
+  }
+}
+
+new Phaser.Game({
+  type: Phaser.AUTO,
+  width: W,
+  height: H,
+  backgroundColor: '#120f29',
+  physics: {
+    default: 'arcade',
+    arcade: {gravity: {y:0}, debug:false}
+  },
+  scale: {
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+    width: W,
+    height: H
+  },
+  scene: [BootScene, MenuScene, GameScene, UIScene, WinScene, GameOverScene]
+});
+</script>
+</body>
+</html>
